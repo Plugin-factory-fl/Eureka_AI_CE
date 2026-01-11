@@ -447,6 +447,11 @@
       return;
     }
 
+    if (typeof chrome === 'undefined' || !chrome.runtime) {
+      console.error('[SumVid] Chrome runtime not available for StickyButton styles');
+      return;
+    }
+
     const link = document.createElement('link');
     link.id = 'sumvid-sticky-button-style';
     link.rel = 'stylesheet';
@@ -479,13 +484,14 @@
     isDragging = false;
   }
 
-  // Global variables for drag tracking
-  let dragStartX = 0;
-  let dragStartY = 0;
-
-  // Export to global scope
-  window.SumVidStickyButton = {
-    init: initStickyButton,
-    remove: removeStickyButton
-  };
+  // Export to global scope (do this immediately to avoid timing issues)
+  try {
+    window.SumVidStickyButton = {
+      init: initStickyButton,
+      remove: removeStickyButton
+    };
+    console.log('[SumVid] StickyButton module exported to window');
+  } catch (error) {
+    console.error('[SumVid] Failed to export StickyButton module:', error);
+  }
 })();

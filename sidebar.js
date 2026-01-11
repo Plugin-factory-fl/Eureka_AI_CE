@@ -1007,7 +1007,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   initializeExtension();
   
   // Initialize modules (wait a bit to ensure scripts are loaded)
-  setTimeout(() => {
+  let moduleRetryCount = 0;
+  const MAX_MODULE_RETRIES = 10;
+  
+  function initializeModules() {
     if (window.SettingsPanel) {
       window.SettingsPanel.initializeSettings();
       window.SettingsPanel.registerSettingsHandlers();
@@ -1018,12 +1021,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.LoginMenu.initializeLoginMenu();
       window.LoginMenu.registerAccountHandlers();
     } else {
-      console.warn('[SumVid] LoginMenu module not loaded');
+      moduleRetryCount++;
+      if (moduleRetryCount < MAX_MODULE_RETRIES) {
+        console.warn(`[SumVid] LoginMenu module not loaded, retrying... (${moduleRetryCount}/${MAX_MODULE_RETRIES})`);
+        setTimeout(initializeModules, 200);
+        return;
+      } else {
+        console.error('[SumVid] LoginMenu module failed to load after max retries');
+      }
     }
     if (!window.UsageTracker) {
       console.warn('[SumVid] UsageTracker module not loaded');
     }
-  }, 100);
+  }
+  
+  // Try immediately, then retry if needed
+  setTimeout(initializeModules, 100);
 
   // Initialize usage tracking and update status cards
   async function updateStatusCards() {
@@ -1290,7 +1303,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (regenerateQuizButton) regenerateQuizButton.style.display = 'none';
       if (quizContent) {
         quizContent.style.display = 'none';
-        quizContent.classList.add('collapsed');
+      quizContent.classList.add('collapsed');
       }
       quizHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
     }
@@ -1395,7 +1408,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const regenerateQuizButton = document.getElementById('regenerate-quiz-button');
   if (regenerateQuizButton) {
     regenerateQuizButton.addEventListener('click', async (e) => {
-      e.stopPropagation();
+    e.stopPropagation();
     if (!currentVideoInfo?.url || !summaryContent) {
       console.warn('Missing video info or summary content');
       return;
@@ -1494,8 +1507,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!result.success) {
           alert(result.error || 'Daily limit reached.');
           await updateStatusCards();
-          return;
-        }
+            return;
+          }
       }
       
       // Proceed with default regeneration
@@ -1528,8 +1541,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const summaryText = summaryTextElement ? summaryTextElement.innerHTML : '';
         
         // Clear cached quiz
-        const videoId = getVideoId(currentVideoInfo.url);
-        if (videoId) {
+          const videoId = getVideoId(currentVideoInfo.url);
+          if (videoId) {
           chrome.storage.local.remove([`quiz_${videoId}`]);
         }
         
@@ -1548,58 +1561,58 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Regenerate summary button handler
-  const regenerateSummaryButton = document.getElementById('regenerate-summary-button');
+    const regenerateSummaryButton = document.getElementById('regenerate-summary-button');
   if (regenerateSummaryButton) {
     console.log('Regenerate summary button found, attaching listener');
-    regenerateSummaryButton.addEventListener('click', async (e) => {
-      console.log('Regenerate summary button clicked');
-      e.stopPropagation();
-      if (!currentVideoInfo?.transcript) {
-        console.warn('No transcript available for summary regeneration');
-        // Try to get transcript first
-        try {
-          const transcriptResponse = await sendMessageWithTimeout({ type: 'REQUEST_VIDEO_INFO' });
-          if (transcriptResponse?.error) {
-            console.error('Failed to get transcript:', transcriptResponse.error);
+      regenerateSummaryButton.addEventListener('click', async (e) => {
+        console.log('Regenerate summary button clicked');
+        e.stopPropagation();
+        if (!currentVideoInfo?.transcript) {
+          console.warn('No transcript available for summary regeneration');
+          // Try to get transcript first
+          try {
+            const transcriptResponse = await sendMessageWithTimeout({ type: 'REQUEST_VIDEO_INFO' });
+            if (transcriptResponse?.error) {
+              console.error('Failed to get transcript:', transcriptResponse.error);
+              return;
+            }
+            // Wait for transcript to be available
+            await new Promise((resolve) => {
+              const checkTranscript = () => {
+                chrome.storage.local.get(['currentVideoInfo'], (result) => {
+                  if (result.currentVideoInfo?.transcript) {
+                    currentVideoInfo = result.currentVideoInfo;
+                    resolve();
+                  } else {
+                    setTimeout(checkTranscript, 500);
+                  }
+                });
+              };
+              checkTranscript();
+            });
+          } catch (error) {
+            console.error('Failed to get transcript for summary regeneration:', error);
             return;
           }
-          // Wait for transcript to be available
-          await new Promise((resolve) => {
-            const checkTranscript = () => {
-              chrome.storage.local.get(['currentVideoInfo'], (result) => {
-                if (result.currentVideoInfo?.transcript) {
-                  currentVideoInfo = result.currentVideoInfo;
-                  resolve();
-                } else {
-                  setTimeout(checkTranscript, 500);
-                }
-              });
-            };
-            checkTranscript();
-          });
-        } catch (error) {
-          console.error('Failed to get transcript for summary regeneration:', error);
-          return;
         }
-      }
-      
-      // If summary already exists, show context bar as a floating popup
-      if (summaryContent && summaryContent.textContent && !summaryContent.textContent.includes('Generating')) {
-        summaryContextBar.classList.remove('hidden');
-        summaryContextInput.value = '';
-        summaryContextInput.focus();
-        // Hide on click outside
-        const handleClickOutside = (event) => {
-          if (!summaryContextBar.contains(event.target) && event.target !== regenerateSummaryButton) {
+        
+        // If summary already exists, show context bar as a floating popup
+        if (summaryContent && summaryContent.textContent && !summaryContent.textContent.includes('Generating')) {
+          summaryContextBar.classList.remove('hidden');
+          summaryContextInput.value = '';
+          summaryContextInput.focus();
+          // Hide on click outside
+          const handleClickOutside = (event) => {
+            if (!summaryContextBar.contains(event.target) && event.target !== regenerateSummaryButton) {
+              summaryContextBar.classList.add('hidden');
+              document.removeEventListener('mousedown', handleClickOutside);
+            }
+          };
+          document.addEventListener('mousedown', handleClickOutside);
+          // Submit on button or Enter
+          const submitContext = async () => {
             summaryContextBar.classList.add('hidden');
             document.removeEventListener('mousedown', handleClickOutside);
-          }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        // Submit on button or Enter
-        const submitContext = async () => {
-          summaryContextBar.classList.add('hidden');
-          document.removeEventListener('mousedown', handleClickOutside);
 
           // Check usage limit before regenerating
           if (window.UsageTracker) {
@@ -1610,15 +1623,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
 
-          // Clear cached content for this video
-          const videoId = getVideoId(currentVideoInfo.url);
-          if (videoId) {
-            chrome.storage.local.remove([
-              `summary_${videoId}`,
-              `quiz_${videoId}`,
-              `chat_${videoId}`
-            ]);
-          }
+            // Clear cached content for this video
+            const videoId = getVideoId(currentVideoInfo.url);
+            if (videoId) {
+              chrome.storage.local.remove([
+                `summary_${videoId}`,
+                `quiz_${videoId}`,
+                `chat_${videoId}`
+              ]);
+            }
           
           // Increment usage before generation
           if (window.UsageTracker) {
@@ -1630,17 +1643,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
           
-          userContext.summary = summaryContextInput.value;
+            userContext.summary = summaryContextInput.value;
           await summarizeText(currentVideoInfo.transcript, true, summaryContextInput.value);
-          if (chatMessages) chatMessages.innerHTML = '';
+            if (chatMessages) chatMessages.innerHTML = '';
           await updateStatusCards();
-        };
-        summaryContextSubmit.onclick = submitContext;
-        summaryContextInput.onkeydown = (ev) => { if (ev.key === 'Enter') submitContext(); };
-        return;
-      }
-      // Default: no summary exists or summary is being generated, proceed with regeneration
-      console.log('Proceeding with summary regeneration');
+          };
+          summaryContextSubmit.onclick = submitContext;
+          summaryContextInput.onkeydown = (ev) => { if (ev.key === 'Enter') submitContext(); };
+          return;
+        }
+        // Default: no summary exists or summary is being generated, proceed with regeneration
+        console.log('Proceeding with summary regeneration');
       
       // Check usage limit before regenerating
       if (window.UsageTracker) {
@@ -1651,15 +1664,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
       
-      // Clear cached content for this video
-      const videoId = getVideoId(currentVideoInfo.url);
-      if (videoId) {
-        chrome.storage.local.remove([
-          `summary_${videoId}`,
-          `quiz_${videoId}`,
-          `chat_${videoId}`
-        ]);
-      }
+        // Clear cached content for this video
+        const videoId = getVideoId(currentVideoInfo.url);
+        if (videoId) {
+          chrome.storage.local.remove([
+            `summary_${videoId}`,
+            `quiz_${videoId}`,
+            `chat_${videoId}`
+          ]);
+        }
       
       // Increment usage before generation
       if (window.UsageTracker) {
@@ -1671,9 +1684,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
       
-      userContext.summary = '';
+        userContext.summary = '';
       await summarizeText(currentVideoInfo.transcript, true, '');
-      if (chatMessages) chatMessages.innerHTML = '';
+        if (chatMessages) chatMessages.innerHTML = '';
       await updateStatusCards();
     });
   } else {

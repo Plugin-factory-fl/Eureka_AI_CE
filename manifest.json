@@ -16,7 +16,7 @@
     "https://*.onrender.com/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.openai.com"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.openai.com https://sumvid-learn-backend.onrender.com https://*.onrender.com"
   },
   "web_accessible_resources": [
     {

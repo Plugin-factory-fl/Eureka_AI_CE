@@ -462,7 +462,9 @@ window.addEventListener('message', async (event) => {
 
 // Initialize sticky button and sidebar
 function initializeExtension() {
-  if (window.location.href.includes('youtube.com/watch')) {
+  const url = window.location.href;
+  if (url.includes('youtube.com/watch')) {
+    console.log('[SumVid] Initializing extension on YouTube video page');
     // Inject sidebar container (will be shown/hidden via toggle)
     injectSidebar();
 
@@ -470,20 +472,35 @@ function initializeExtension() {
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('Source/StickyButton.js');
     script.onload = () => {
-      if (window.SumVidStickyButton) {
-        // Make toggleSidebar available globally for sticky button
-        window.toggleSidebar = toggleSidebar;
-        // Initialize sticky button
-        window.SumVidStickyButton.init({ position: 'bottom-right', offsetX: 250, offsetY: 250 });
-      }
+      console.log('[SumVid] StickyButton.js loaded');
+      // Small delay to ensure IIFE has executed
+      setTimeout(() => {
+        if (window.SumVidStickyButton) {
+          // Make toggleSidebar available globally for sticky button
+          window.toggleSidebar = toggleSidebar;
+          // Initialize sticky button
+          console.log('[SumVid] Initializing sticky button');
+          window.SumVidStickyButton.init({ position: 'bottom-right', offsetX: 250, offsetY: 250 });
+        } else {
+          console.error('[SumVid] SumVidStickyButton not found on window after load');
+          console.log('[SumVid] window.SumVidStickyButton:', typeof window.SumVidStickyButton);
+        }
+      }, 10);
+    };
+    script.onerror = () => {
+      console.error('[SumVid] Failed to load StickyButton.js');
     };
     document.head.appendChild(script);
+  } else {
+    console.log('[SumVid] Not a YouTube video page, skipping initialization');
   }
 }
 
-// Initialize when DOM is ready
+// Initialize sticky button and sidebar when page is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeExtension);
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initializeExtension, 100);
+  });
 } else {
-  initializeExtension();
+  setTimeout(initializeExtension, 100);
 }

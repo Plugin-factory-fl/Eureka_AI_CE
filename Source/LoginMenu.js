@@ -655,9 +655,6 @@ function registerAccountHandlers() {
         if (submitButton) {
           submitButton.disabled = false;
           submitButton.textContent = 'Reset Password';
-      }
-    });
-  }
         }
       }
     });

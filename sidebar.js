@@ -31,9 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const quizContent = document.getElementById('quiz-content');
   const quizHeader = document.getElementById('quiz-header');
 
-  const questionsContainer = document.getElementById('questions-container');
-  const questionsContent = document.getElementById('questions-content');
-  const questionsHeader = document.getElementById('questions-header');
+  const chatSection = document.getElementById('chat-section');
   const questionInput = document.getElementById('question-input');
   const sendQuestionButton = document.getElementById('send-question');
   const chatMessages = document.getElementById('chat-messages');
@@ -49,6 +47,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentQuestionIndex = 0;
   let totalQuestions = 0;
   let userContext = { summary: '', quiz: '' };
+  let currentFlashcardIndex = 0;
+  let currentFlashcardSet = null;
 
   // Memory management constants
   const CACHE_EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
@@ -321,17 +321,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Questions collapse handling
-  questionsHeader?.addEventListener('click', () => {
-    const isCollapsed = questionsContent.classList.contains('collapsed');
-    if (isCollapsed) {
-      questionsContent.classList.remove('collapsed');
-      questionsHeader.querySelector('.collapse-button')?.classList.remove('collapsed');
-    } else {
-      questionsContent.classList.add('collapsed');
-      questionsHeader.querySelector('.collapse-button')?.classList.add('collapsed');
-    }
-  });
+  // Chat section is always visible (no collapse handling needed)
 
   // Function to add a message to the chat
   function addChatMessage(message, isUser = false) {
@@ -488,12 +478,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!question) return;
 
     // Check usage limit before processing question
-    if (window.UsageTracker) {
-      const limitReached = await window.UsageTracker.isLimitReached();
-      if (limitReached) {
-        alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-        return;
-      }
+    const limitReached = await checkUsageLimit();
+    if (limitReached) {
+      alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+      return;
     }
 
     // Add user's question to chat
@@ -503,21 +491,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Show loading state
-    showLoadingIndicator(questionsContainer);
+    if (chatSection) showLoadingIndicator(chatSection);
 
     try {
-      // Increment usage before processing
-      if (window.UsageTracker) {
-        const result = await window.UsageTracker.incrementUsage();
-        if (!result.success) {
-          addChatMessage(result.error || 'Daily limit reached. Please try again tomorrow.');
-          showCompletionBadge(questionsContainer);
-          await updateStatusCards();
-          return;
-        }
-      }
-
       // Check if chrome.runtime is available
+      // Note: Usage is tracked and incremented on the backend API
       if (typeof chrome === 'undefined' || !chrome.runtime) {
         throw new Error('Chrome runtime not available');
       }
@@ -543,7 +521,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Show completion state
-    showCompletionBadge(questionsContainer);
+    if (chatSection) showCompletionBadge(chatSection);
   }
 
   // Event listeners for question input
@@ -626,7 +604,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Modify summarizeText to update reading time when summary is generated
   async function summarizeText(text, forceRegenerate = false, context = '') {
     summaryContainer?.classList.remove('hidden');
-    questionsContainer?.classList.remove('hidden');
     quizContainer?.classList.remove('hidden');
 
     // Premium feature check for long videos
@@ -702,10 +679,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           summaryContent?.classList.add('collapsed');
           summaryHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
           
-          // Show questions section and load cached chat
-          questionsContainer?.classList.remove('hidden');
-          questionsContent?.classList.add('collapsed');
-          questionsHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
+          // Load cached chat
           await loadCachedChat(videoId);
           
           // Load cached quiz
@@ -799,9 +773,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         summaryHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
         
         // Show and initialize questions section
-        questionsContainer?.classList.remove('hidden');
-        questionsContent?.classList.add('collapsed');
-        questionsHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
         if (chatMessages) {
           chatMessages.innerHTML = '';
         }
@@ -1003,11 +974,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!window.UsageTracker) {
       console.warn('[SumVid] UsageTracker module not loaded');
     }
-    if (window.SumVidSidechat) {
-      window.SumVidSidechat.init();
-    } else {
-      console.warn('[SumVid] SumVidSidechat module not loaded');
-    }
     if (window.SumVidNotesManager) {
       window.SumVidNotesManager.init();
       initializeNotesUI();
@@ -1064,12 +1030,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Check usage limit
-    if (window.UsageTracker) {
-      const limitReached = await window.UsageTracker.isLimitReached();
-      if (limitReached) {
-        alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-        return;
-      }
+    const limitReached = await checkUsageLimit();
+    if (limitReached) {
+      alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+      return;
     }
     
     generateButton.disabled = true;
@@ -1083,17 +1047,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     flashcardContainer?.classList.remove('hidden');
     
     try {
-      // Increment usage
-      if (window.UsageTracker) {
-        const result = await window.UsageTracker.incrementUsage();
-        if (!result.success) {
-          alert(result.error || 'Daily limit reached.');
-          generateButton.disabled = false;
-          generateButton.textContent = 'Generate Flashcards';
-          return;
-        }
-      }
-      
+      // Note: Usage is tracked and incremented on the backend API
       // Generate flashcards
       const message = {
         action: 'generate-flashcards',
@@ -1159,21 +1113,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (relevantSets.length === 0) {
       flashcardList.innerHTML = '';
       flashcardEmpty.classList.remove('hidden');
+      currentFlashcardSet = null;
+      currentFlashcardIndex = 0;
     } else {
       flashcardEmpty.classList.add('hidden');
-      flashcardList.innerHTML = '';
       
-      // Show the most relevant set (or most recent)
-      const setToShow = relevantSets[0];
+      // Store the set and reset index
+      currentFlashcardSet = relevantSets[0];
+      currentFlashcardIndex = 0;
       
-      // Limit to 10 cards as requested
-      const cardsToShow = setToShow.cards.slice(0, 10);
-      
-      cardsToShow.forEach((card, index) => {
-        const cardElement = createFlashcardElement(card, index, setToShow.id);
-        flashcardList.appendChild(cardElement);
-      });
+      // Render slideshow view (single card)
+      renderFlashcardSlideshow();
     }
+  }
+  
+  function renderFlashcardSlideshow() {
+    if (!currentFlashcardSet || !flashcardList) return;
+    
+    // Limit to 10 cards
+    const cards = currentFlashcardSet.cards.slice(0, 10);
+    
+    if (cards.length === 0) {
+      flashcardList.innerHTML = '<p style="text-align: center; padding: 20px; color: var(--text-secondary);">No flashcards available.</p>';
+      return;
+    }
+    
+    // Clear and show only current card
+    flashcardList.innerHTML = '';
+    const currentCard = cards[currentFlashcardIndex];
+    const cardElement = createFlashcardElement(currentCard, currentFlashcardIndex, currentFlashcardSet.id);
+    flashcardList.appendChild(cardElement);
+    
+    // Add card counter
+    const counter = document.createElement('div');
+    counter.className = 'flashcard-counter';
+    counter.textContent = `${currentFlashcardIndex + 1} / ${cards.length}`;
+    flashcardList.appendChild(counter);
+  }
+  
+  function navigateFlashcard(direction) {
+    if (!currentFlashcardSet) return;
+    
+    const cards = currentFlashcardSet.cards.slice(0, 10);
+    if (cards.length === 0) return;
+    
+    if (direction === 'next') {
+      currentFlashcardIndex = (currentFlashcardIndex + 1) % cards.length;
+    } else if (direction === 'prev') {
+      currentFlashcardIndex = (currentFlashcardIndex - 1 + cards.length) % cards.length;
+    }
+    
+    renderFlashcardSlideshow();
   }
   
   function createFlashcardElement(card, index, setId) {
@@ -1234,10 +1224,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     actions.appendChild(deleteBtn);
     div.appendChild(actions);
     
-    // Flip on click
+    // Click behavior: flip on first click, navigate to next on second click
+    let isFlipped = false;
     div.addEventListener('click', (e) => {
       if (e.target === deleteBtn || deleteBtn.contains(e.target) || actions.contains(e.target)) return;
-      div.classList.toggle('flipped');
+      
+      if (!isFlipped) {
+        // First click: flip the card
+        div.classList.add('flipped');
+        isFlipped = true;
+      } else {
+        // Second click: navigate to next card (unflipped)
+        div.classList.remove('flipped');
+        navigateFlashcard('next');
+        isFlipped = false;
+      }
     });
     
     return div;
@@ -1367,25 +1368,43 @@ document.addEventListener('DOMContentLoaded', async () => {
       const note = window.SumVidNotesManager.getNoteById(noteId);
       if (!note || !note.content) return;
       
-      // Check usage limit
-      if (window.UsageTracker) {
-        const limitReached = await window.UsageTracker.isLimitReached();
-        if (limitReached) {
-          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-          return;
+      // Check usage limit from backend API
+      try {
+        const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+        const token = stored.sumvid_auth_token;
+        
+        if (token) {
+          const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (response.ok) {
+            const usage = await response.json();
+            if (usage.enhancementsUsed >= usage.enhancementsLimit) {
+              alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[SumVid] Failed to check usage limit from backend, using local storage fallback:', error);
+        // Fallback to local storage if backend is not available
+        if (window.UsageTracker) {
+          const limitReached = await window.UsageTracker.isLimitReached();
+          if (limitReached) {
+            alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+            return;
+          }
         }
       }
       
       try {
-        // Increment usage
-        if (window.UsageTracker) {
-          const result = await window.UsageTracker.incrementUsage();
-          if (!result.success) {
-            alert(result.error || 'Daily limit reached.');
-            return;
-          }
-        }
-        
+        // Note: Usage is tracked and incremented on the backend API
         // Generate flashcards from note content
         const response = await chrome.runtime.sendMessage({
           action: 'generate-flashcards',
@@ -1495,15 +1514,59 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Initialize usage tracking and update status cards
   async function updateStatusCards() {
-    if (!window.UsageTracker) {
-      console.warn('[SumVid] UsageTracker not available yet');
-      return;
-    }
+    const enhancementsCountEl = document.getElementById('enhancements-count');
+    const enhancementsLimitEl = document.getElementById('enhancements-limit');
+    
     try {
-      await window.UsageTracker.resetDailyUsageIfNeeded();
-      const usage = await window.UsageTracker.getUsage();
-      const enhancementsCountEl = document.getElementById('enhancements-count');
-      const enhancementsLimitEl = document.getElementById('enhancements-limit');
+      // Try to get usage from backend API if user is logged in
+      let usage = null;
+      const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+      
+      try {
+        // Get auth token from storage
+        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+        const token = stored.sumvid_auth_token;
+        
+        if (token) {
+          // Fetch usage from backend
+          const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            usage = {
+              enhancementsUsed: data.enhancementsUsed || 0,
+              enhancementsLimit: data.enhancementsLimit || 10
+            };
+          }
+        }
+      } catch (error) {
+        console.warn('[SumVid] Failed to get usage from backend:', error);
+      }
+      
+      // Fallback to local storage if backend is not available or user is not logged in
+      if (!usage && window.UsageTracker) {
+        await window.UsageTracker.resetDailyUsageIfNeeded();
+        const localUsage = await window.UsageTracker.getUsage();
+        usage = {
+          enhancementsUsed: localUsage.enhancementsUsed,
+          enhancementsLimit: localUsage.enhancementsLimit
+        };
+      }
+      
+      // Default values if neither backend nor local storage is available
+      if (!usage) {
+        usage = {
+          enhancementsUsed: 0,
+          enhancementsLimit: 10
+        };
+      }
+      
       if (enhancementsCountEl) enhancementsCountEl.textContent = usage.enhancementsUsed;
       if (enhancementsLimitEl) enhancementsLimitEl.textContent = usage.enhancementsLimit;
       
@@ -1526,25 +1589,145 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (error) {
       console.error('Error updating status cards:', error);
+      // Set default values on error
+      if (enhancementsCountEl) enhancementsCountEl.textContent = '0';
+      if (enhancementsLimitEl) enhancementsLimitEl.textContent = '10';
     }
   }
   updateStatusCards();
+
+  // Helper function to check usage limit from backend API
+  async function checkUsageLimit() {
+    try {
+      const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+      const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+      const token = stored.sumvid_auth_token;
+      
+      if (token) {
+        const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (response.ok) {
+          const usage = await response.json();
+          return usage.enhancementsUsed >= usage.enhancementsLimit;
+        }
+      }
+    } catch (error) {
+      console.warn('[SumVid] Failed to check usage limit from backend:', error);
+    }
+    
+    // Fallback to local storage if backend is not available
+    if (window.UsageTracker) {
+      return await window.UsageTracker.isLimitReached();
+    }
+    
+    return false; // Allow usage on error
+  }
+
+  // Copy URL button handler
+  const copyUrlButton = document.getElementById('copy-url-button');
+  if (copyUrlButton) {
+    copyUrlButton.addEventListener('click', async (e) => {
+      const urlToCopy = e.currentTarget.dataset.fullUrl;
+      if (!urlToCopy) return;
+      
+      try {
+        await navigator.clipboard.writeText(urlToCopy);
+        // Visual feedback
+        const originalTitle = e.currentTarget.title;
+        e.currentTarget.title = 'Copied!';
+        e.currentTarget.style.color = '#4CAF50';
+        setTimeout(() => {
+          e.currentTarget.title = originalTitle || 'Copy URL';
+          e.currentTarget.style.color = '';
+        }, 2000);
+      } catch (error) {
+        console.error('Failed to copy URL:', error);
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = urlToCopy;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          e.currentTarget.title = 'Copied!';
+          e.currentTarget.style.color = '#4CAF50';
+          setTimeout(() => {
+            e.currentTarget.title = 'Copy URL';
+            e.currentTarget.style.color = '';
+          }, 2000);
+        } catch (fallbackError) {
+          console.error('Fallback copy failed:', fallbackError);
+        }
+        document.body.removeChild(textArea);
+      }
+    });
+  }
 
   // Manual Summarize button handler
   const summarizeButton = document.getElementById('summarize-button');
   if (summarizeButton) {
     summarizeButton.addEventListener('click', async () => {
-      if (!currentVideoInfo || !currentVideoInfo.transcript) {
-        alert('No video transcript available.');
+      if (!currentVideoInfo) {
+        alert('No content available to summarize.');
+        return;
+      }
+      
+      // Check for content based on type (transcript for videos, text for webpages/PDFs)
+      const contentType = currentVideoInfo.type || 'video';
+      const hasContent = contentType === 'video' 
+        ? currentVideoInfo.transcript 
+        : (currentVideoInfo.text || currentVideoInfo.needsServerExtraction);
+      
+      if (!hasContent) {
+        const errorMsg = contentType === 'video' 
+          ? 'No video transcript available.'
+          : contentType === 'pdf'
+          ? 'No PDF content available.'
+          : 'No webpage content available.';
+        alert(errorMsg);
         return;
       }
 
-      // Check usage limit
-      if (window.UsageTracker) {
-        const limitReached = await window.UsageTracker.isLimitReached();
-        if (limitReached) {
-          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-          return;
+      // Check usage limit from backend API
+      try {
+        const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+        const token = stored.sumvid_auth_token;
+        
+        if (token) {
+          const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (response.ok) {
+            const usage = await response.json();
+            if (usage.enhancementsUsed >= usage.enhancementsLimit) {
+              alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[SumVid] Failed to check usage limit from backend, using local storage fallback:', error);
+        // Fallback to local storage if backend is not available
+        if (window.UsageTracker) {
+          const limitReached = await window.UsageTracker.isLimitReached();
+          if (limitReached) {
+            alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+            return;
+          }
         }
       }
 
@@ -1561,19 +1744,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       showLoadingIndicator(summaryContainer);
 
       try {
-        // Increment usage before generation
-        if (window.UsageTracker) {
-          const result = await window.UsageTracker.incrementUsage();
-          if (!result.success) {
-            alert(result.error || 'Daily limit reached.');
-            summarizeButton.disabled = false;
-            summarizeButton.textContent = 'Summarize';
-            return;
-          }
-        }
-
-        // Generate summary
-        await summarizeText(currentVideoInfo.transcript, false, '');
+        // Note: Usage is tracked and incremented on the backend API
+        // Generate summary - use appropriate content field based on type
+        const contentText = contentType === 'video' 
+          ? currentVideoInfo.transcript 
+          : (currentVideoInfo.text || '');
+        await summarizeText(contentText, false, '');
         
         // Show regenerate button, hide summarize button
         const regenerateButton = document.getElementById('regenerate-summary-button');
@@ -1595,17 +1771,59 @@ document.addEventListener('DOMContentLoaded', async () => {
   const makeTestButton = document.getElementById('make-test-button');
   if (makeTestButton) {
     makeTestButton.addEventListener('click', async () => {
-      if (!currentVideoInfo || !currentVideoInfo.transcript) {
-        alert('No video transcript available.');
+      if (!currentVideoInfo) {
+        alert('No content available to generate quiz from.');
+        return;
+      }
+      
+      // Check for content based on type (transcript for videos, text for webpages/PDFs)
+      const contentType = currentVideoInfo.type || 'video';
+      const hasContent = contentType === 'video' 
+        ? currentVideoInfo.transcript 
+        : (currentVideoInfo.text || currentVideoInfo.needsServerExtraction);
+      
+      if (!hasContent) {
+        const errorMsg = contentType === 'video' 
+          ? 'No video transcript available.'
+          : contentType === 'pdf'
+          ? 'No PDF content available.'
+          : 'No webpage content available.';
+        alert(errorMsg);
         return;
       }
 
-      // Check usage limit
-      if (window.UsageTracker) {
-        const limitReached = await window.UsageTracker.isLimitReached();
-        if (limitReached) {
-          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-          return;
+      // Check usage limit from backend API
+      try {
+        const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+        const token = stored.sumvid_auth_token;
+        
+        if (token) {
+          const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (response.ok) {
+            const usage = await response.json();
+            if (usage.enhancementsUsed >= usage.enhancementsLimit) {
+              alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[SumVid] Failed to check usage limit from backend, using local storage fallback:', error);
+        // Fallback to local storage if backend is not available
+        if (window.UsageTracker) {
+          const limitReached = await window.UsageTracker.isLimitReached();
+          if (limitReached) {
+            alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+            return;
+          }
         }
       }
 
@@ -1633,17 +1851,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        // Increment usage before generation
-        if (window.UsageTracker) {
-          const result = await window.UsageTracker.incrementUsage();
-          if (!result.success) {
-            alert(result.error || 'Daily limit reached.');
-            makeTestButton.disabled = false;
-            makeTestButton.textContent = 'Make Test';
-            return;
-          }
-        }
-
+        // Note: Usage is tracked and incremented on the backend API
         // Generate quiz
         await generateQuiz(currentVideoInfo.transcript, summaryText, '');
         
@@ -1676,7 +1884,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (basicInfo && !basicInfo.error) {
         currentVideoInfo = { ...videoInfo, ...basicInfo };
         if (videoTitle) {
-          videoTitle.textContent = basicInfo.title || 'Unknown Title';
+          // Decode HTML entities (like &#39; to ') before displaying
+          const titleText = basicInfo.title || 'Unknown Title';
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = titleText;
+          videoTitle.textContent = tempDiv.textContent || tempDiv.innerText || titleText;
         }
         if (channelName) {
           channelName.textContent = basicInfo.channel || 'Unknown Channel';
@@ -1718,9 +1930,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Always show questions section with cached content
-    questionsContainer?.classList.remove('hidden');
-    questionsContent?.classList.add('collapsed');
-    questionsHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
     if (cachedChat) {
       await loadCachedChat(videoId);
     } else {
@@ -1789,11 +1998,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     userContext = { ...DEFAULT_CONTEXT };
     
     if (videoTitle) {
-      videoTitle.textContent = contentInfo.title || 'Untitled Content';
+      // Decode HTML entities (like &#39; to ') before displaying
+      const titleText = contentInfo.title || 'Untitled Content';
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = titleText;
+      videoTitle.textContent = tempDiv.textContent || tempDiv.innerText || titleText;
     }
     if (channelName) {
       // Show channel for videos, URL/source for webpages/PDFs
-      channelName.textContent = contentInfo.channel || contentInfo.url || 'Unknown Source';
+      const sourceText = contentInfo.channel || contentInfo.url || 'Unknown Source';
+      const copyUrlButton = document.getElementById('copy-url-button');
+      
+      if (contentInfo.url && !contentInfo.channel) {
+        // For URLs (webpages/PDFs): hide the text, show copy button
+        if (channelName) {
+          channelName.textContent = '';
+          channelName.style.display = 'none';
+        }
+        if (copyUrlButton) {
+          copyUrlButton.dataset.fullUrl = contentInfo.url;
+          copyUrlButton.style.display = 'flex';
+          // Preserve the SVG icon when setting text
+          const svg = copyUrlButton.querySelector('svg');
+          if (svg) {
+            copyUrlButton.innerHTML = svg.outerHTML + ' Copy URL';
+          } else {
+            copyUrlButton.textContent = 'Copy URL';
+          }
+        }
+      } else {
+        // For channels (videos): show the text, hide copy button
+        if (channelName) {
+          channelName.textContent = sourceText;
+          channelName.style.display = 'block';
+        }
+        if (copyUrlButton) {
+          copyUrlButton.style.display = 'none';
+        }
+      }
     }
     
     // Update duration in info center (only for videos)
@@ -1802,7 +2044,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     summaryContainer?.classList.add('hidden');
-    questionsContainer?.classList.add('hidden');
     quizContainer?.classList.add('hidden');
     
     // Show status section when content info is displayed
@@ -1816,7 +2057,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (hasContent) {
       summaryContainer?.classList.remove('hidden');
       quizContainer?.classList.remove('hidden');
-      questionsContainer?.classList.remove('hidden');
+      // Chat section is always visible
       // But keep content hidden until manually generated
       if (summaryContent) summaryContent.style.display = 'none';
       if (quizContent) quizContent.style.display = 'none';
@@ -1887,17 +2128,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         showLoadingIndicator(quizContainer);
         if (quizContent) quizContent.textContent = 'Generating new quiz questions...';
         try {
-          // Increment usage before generation
-          if (window.UsageTracker) {
-            const result = await window.UsageTracker.incrementUsage();
-            if (!result.success) {
-              alert(result.error || 'Daily limit reached.');
-              if (quizContent) quizContent.textContent = 'Generation cancelled - limit reached.';
-              showCompletionBadge(quizContainer);
-              await updateStatusCards();
-              return;
-            }
-          }
+          // Note: Usage is tracked and incremented on the backend API
           if (!currentVideoInfo.transcript) {
             const transcriptResponse = await sendMessageWithTimeout({ type: 'REQUEST_VIDEO_INFO' });
             if (transcriptResponse?.error) throw new Error('Failed to get transcript');
@@ -1939,16 +2170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
       
-      // Increment usage before generation
-      if (window.UsageTracker) {
-        const result = await window.UsageTracker.incrementUsage();
-        if (!result.success) {
-          alert(result.error || 'Daily limit reached.');
-          await updateStatusCards();
-            return;
-          }
-      }
-      
+      // Note: Usage is tracked and incremented on the backend API
       // Proceed with default regeneration
       showLoadingIndicator(quizContainer);
       if (quizContent) {
@@ -2071,16 +2293,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               ]);
             }
           
-          // Increment usage before generation
-          if (window.UsageTracker) {
-            const result = await window.UsageTracker.incrementUsage();
-            if (!result.success) {
-              alert(result.error || 'Daily limit reached.');
-              await updateStatusCards();
-              return;
-            }
-          }
-          
+          // Note: Usage is tracked and incremented on the backend API
             userContext.summary = summaryContextInput.value;
           await summarizeText(currentVideoInfo.transcript, true, summaryContextInput.value);
             if (chatMessages) chatMessages.innerHTML = '';
@@ -2112,16 +2325,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           ]);
         }
       
-      // Increment usage before generation
-      if (window.UsageTracker) {
-        const result = await window.UsageTracker.incrementUsage();
-        if (!result.success) {
-          alert(result.error || 'Daily limit reached.');
-          await updateStatusCards();
-          return;
-        }
-      }
-      
+      // Note: Usage is tracked and incremented on the backend API
         userContext.summary = '';
       await summarizeText(currentVideoInfo.transcript, true, '');
         if (chatMessages) chatMessages.innerHTML = '';
@@ -2145,5 +2349,46 @@ document.addEventListener('DOMContentLoaded', async () => {
   function ensureEventListeners() {
     // Event listeners are already attached above, this function is kept for compatibility
     // but no longer needs to re-attach since handlers are set up properly
+    
+    // Setup status upgrade button handler (upgrade-button in account dialog is handled by LoginMenu.js)
+    const statusUpgradeBtn = document.getElementById('status-upgrade-btn');
+    if (statusUpgradeBtn && !statusUpgradeBtn.dataset.listenerAttached) {
+      statusUpgradeBtn.dataset.listenerAttached = 'true';
+      statusUpgradeBtn.addEventListener('click', async () => {
+        const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+        try {
+          const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+          const token = stored.sumvid_auth_token;
+          
+          if (!token) {
+            alert('Please log in to upgrade to Pro');
+            return;
+          }
+
+          const response = await fetch(`${BACKEND_URL}/api/checkout/create-session`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(errorData.error || errorData.message || `Server error: ${response.status}`);
+          }
+
+          const data = await response.json();
+          if (data.url) {
+            window.open(data.url, '_blank');
+          } else {
+            alert('Upgrade feature coming soon!');
+          }
+        } catch (error) {
+          console.error('Upgrade error:', error);
+          alert(`Failed to initiate upgrade: ${error.message}. Please try again later.`);
+        }
+      });
+    }
   }
 });

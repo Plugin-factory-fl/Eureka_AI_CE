@@ -206,15 +206,18 @@ function detectContentType() {
 
 function extractWebpageText() {
   try {
-    // Remove script and style elements
-    const scripts = document.querySelectorAll('script, style, noscript, iframe');
-    scripts.forEach(el => el.remove());
+    // Create a clone of the document body to avoid modifying the actual DOM
+    const bodyClone = document.body.cloneNode(true);
+    
+    // Remove unwanted elements from the clone
+    const elementsToRemove = bodyClone.querySelectorAll('script, style, noscript, iframe, nav, header, footer, aside, .ad, .advertisement, .ads, [class*="ad-"], [id*="ad-"]');
+    elementsToRemove.forEach(el => el.remove());
     
     // Get main content areas (prioritize article, main, content areas)
     let content = '';
-    const article = document.querySelector('article');
-    const main = document.querySelector('main');
-    const contentArea = document.querySelector('[role="main"], .content, .post-content, .entry-content');
+    const article = bodyClone.querySelector('article');
+    const main = bodyClone.querySelector('main');
+    const contentArea = bodyClone.querySelector('[role="main"], .content, .post-content, .entry-content, #content, #main-content, .main-content');
     
     if (article) {
       content = article.innerText || article.textContent || '';
@@ -223,9 +226,7 @@ function extractWebpageText() {
     } else if (contentArea) {
       content = contentArea.innerText || contentArea.textContent || '';
     } else {
-      // Fallback to body
-      const bodyClone = document.body.cloneNode(true);
-      bodyClone.querySelectorAll('script, style, noscript, iframe, nav, header, footer, aside').forEach(el => el.remove());
+      // Fallback: use the entire body clone (already cleaned)
       content = bodyClone.innerText || bodyClone.textContent || '';
     }
     
@@ -234,6 +235,9 @@ function extractWebpageText() {
       .replace(/\s+/g, ' ')
       .replace(/\n\s*\n/g, '\n')
       .trim();
+    
+    // Log extraction for debugging
+    console.log('[SumVid] Extracted webpage text length:', content.length);
     
     return content;
   } catch (error) {

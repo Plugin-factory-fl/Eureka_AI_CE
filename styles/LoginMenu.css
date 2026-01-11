@@ -248,3 +248,211 @@
   z-index: 1;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
+
+/* Account Dialog Styles */
+.account-dialog {
+  background: rgba(0, 0, 0, 0.85);
+  border: none;
+  padding: 0;
+  margin: auto;
+  max-width: 90vw;
+  max-height: 90vh;
+  width: 500px;
+}
+
+.account-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+.account-dialog .modal__content {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 0;
+  max-width: 100%;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.account-dialog .modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #ffffff;
+}
+
+.account-dialog .modal__header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333333;
+}
+
+.account-dialog .modal__body {
+  padding: 24px;
+  overflow-y: auto;
+  background: #ffffff;
+}
+
+.account-dialog .modal__close {
+  padding: 4px;
+  color: #666666;
+}
+
+.account-dialog .icon--close {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.account-dialog .btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.account-dialog .btn--ghost {
+  background: transparent;
+  color: #666666;
+}
+
+.account-dialog .btn--ghost:hover {
+  background: #f5f5f5;
+  color: #333333;
+}
+
+.account-dialog .btn--primary {
+  background: #A855F7;
+  color: #ffffff;
+}
+
+.account-dialog .btn--primary:hover {
+  background: #9333ea;
+}
+
+.account-dialog .form-field__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333333;
+  margin-bottom: 4px;
+}
+
+.account-dialog .account__body {
+  background: #ffffff;
+}
+
+.account-dialog .account__input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #ffffff;
+  color: #333333;
+  box-sizing: border-box;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  box-shadow: none;
+}
+
+.account-dialog .account__input:focus {
+  outline: none;
+  border-color: #A855F7;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.1);
+}
+
+.account-dialog .account__input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-dialog .account__password-toggle {
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  color: #666666;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  position: static;
+}
+
+.account-dialog .account__password-toggle:hover {
+  background: #f5f5f5;
+  color: #333333;
+}
+
+.account-dialog .account__error-message {
+  padding: 10px 14px;
+  background: #ffebee;
+  border: 1px solid #f44336;
+  border-radius: 6px;
+  color: #c62828;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.account-dialog .account__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.account-dialog .account__footer-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.account-dialog .account__create-link,
+.account-dialog .account__forgot-link {
+  background: none;
+  border: none;
+  color: #A855F7;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.account-dialog .account__create-link:hover,
+.account-dialog .account__forgot-link:hover {
+  color: #9333ea;
+}
+
+.account-dialog .account__footer-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.account-dialog .account__logged-in-body {
+  background: #ffffff;
+}
+
+.account-dialog .account__logged-in-as {
+  color: #333333;
+}
+
+.account-dialog .account__plan-label {
+  color: #333333;
+}
+
+.account-dialog .account__plan-description {
+  color: #666666;
+}

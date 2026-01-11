@@ -143,38 +143,149 @@
   cursor: pointer;
 }
 
-.note-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+/* Note Editor Dialog Styles */
+.note-editor-dialog {
+  background: rgba(0, 0, 0, 0.85);
+  border: none;
+  padding: 0;
+  margin: auto;
+  max-width: 90vw;
+  max-height: 90vh;
+  width: 600px;
 }
 
-.note-editor__input {
-  padding: 8px 12px;
+.note-editor-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+.note-editor-dialog .modal__content {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 0;
+  max-width: 100%;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.note-editor-dialog .modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #ffffff;
+}
+
+.note-editor-dialog .modal__header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333333;
+}
+
+.note-editor-dialog .modal__body {
+  padding: 24px;
+  overflow-y: auto;
+  background: #ffffff;
+}
+
+.note-editor-dialog .modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid #e0e0e0;
+  background: #ffffff;
+}
+
+.note-editor-dialog .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.note-editor-dialog .form-field:last-of-type {
+  margin-bottom: 0;
+}
+
+.note-editor-dialog .form-field__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333333;
+  margin-bottom: 4px;
+}
+
+.note-editor-dialog .note-editor__input,
+.note-editor-dialog .note-editor__textarea {
+  padding: 10px 14px;
   border: 1px solid #d0d0d0;
   border-radius: 6px;
   font-size: 14px;
   font-family: inherit;
+  background: #ffffff;
+  color: #333333;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.note-editor__textarea {
-  padding: 8px 12px;
-  border: 1px solid #d0d0d0;
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: inherit;
-  min-height: 120px;
+.note-editor-dialog .note-editor__input:focus,
+.note-editor-dialog .note-editor__textarea:focus {
+  outline: none;
+  border-color: #A855F7;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.1);
+}
+
+.note-editor-dialog .note-editor__textarea {
+  min-height: 150px;
   resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
 }
 
-.note-editor__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+.note-editor-dialog .btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.note-editor-dialog .btn--ghost {
+  background: transparent;
+  color: #666666;
+}
+
+.note-editor-dialog .btn--ghost:hover {
+  background: #f5f5f5;
+  color: #333333;
+}
+
+.note-editor-dialog .btn--primary {
+  background: #A855F7;
+  color: #ffffff;
+}
+
+.note-editor-dialog .btn--primary:hover {
+  background: #9333ea;
+}
+
+.note-editor-dialog .modal__close {
+  padding: 4px;
+  color: #666666;
+}
+
+.note-editor-dialog .icon--close {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
 }
 
 .note-empty {
@@ -210,18 +321,6 @@ body.dark-mode .note-item__folder {
 
 body.dark-mode .note-item__content {
   color: #b0b8c8;
-}
-
-body.dark-mode .note-editor {
-  background: #2a3441;
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-body.dark-mode .note-editor__input,
-body.dark-mode .note-editor__textarea {
-  background: #162036;
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #e9edff;
 }
 
 body.dark-mode .notes-filter {

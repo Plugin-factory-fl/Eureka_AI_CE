@@ -12,7 +12,9 @@ const router = express.Router();
 
 const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID;
 const BACKEND_URL = process.env.BACKEND_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'chrome-extension://';
+// Stripe requires valid HTTPS URLs, so we use the backend URL for redirects
+// The extension will poll or check the session status after redirect
+const FRONTEND_URL = process.env.FRONTEND_URL || BACKEND_URL;
 
 /**
  * POST /api/checkout/create-session
@@ -86,6 +88,13 @@ router.post('/create-session', async (req, res) => {
     }
 
     // Create checkout session
+    // Note: For Chrome extensions, we use the backend URL for redirects
+    // The extension will handle checking the subscription status via webhooks or polling
+    const successUrl = `${BACKEND_URL}/checkout-success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${BACKEND_URL}/checkout-cancelled`;
+    
+    console.log('[Checkout] Using URLs:', { successUrl, cancelUrl, BACKEND_URL });
+    
     const session = await stripe.checkout.sessions.create({
       customer: customer.id,
       mode: 'subscription',
@@ -95,8 +104,8 @@ router.post('/create-session', async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `${FRONTEND_URL}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${FRONTEND_URL}?checkout=cancelled`,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
       locale: 'en',
       metadata: {
         user_id: userId ? userId.toString() : '',

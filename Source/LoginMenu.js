@@ -385,6 +385,7 @@ function registerAccountHandlers() {
       }
 
       try {
+        console.log('[Upgrade] Creating checkout session...');
         const response = await fetch(`${BACKEND_URL}/api/checkout/create-session`, {
           method: 'POST',
           headers: {
@@ -393,20 +394,36 @@ function registerAccountHandlers() {
           },
         });
 
+        console.log('[Upgrade] Response status:', response.status);
+        
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-          throw new Error(errorData.error || errorData.message || `Server error: ${response.status}`);
+          let errorMessage = `Server error: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            console.error('[Upgrade] Error response:', errorData);
+            // Prefer the detailed message over the generic error
+            errorMessage = errorData.message || errorData.error || errorMessage;
+          } catch (parseError) {
+            const text = await response.text().catch(() => '');
+            console.error('[Upgrade] Non-JSON error response:', text);
+            errorMessage = text || errorMessage;
+          }
+          throw new Error(errorMessage);
         }
 
         const data = await response.json();
+        console.log('[Upgrade] Checkout session created:', data);
+        
         if (data.url) {
           window.open(data.url, '_blank');
         } else {
+          console.warn('[Upgrade] No checkout URL in response:', data);
           alert('Upgrade feature coming soon!');
         }
       } catch (error) {
-        console.error('Upgrade error:', error);
-        alert(`Failed to initiate upgrade: ${error.message || 'Please try again later.'}`);
+        console.error('[Upgrade] Error details:', error);
+        const errorMessage = error.message || 'Unknown error occurred';
+        alert(`Failed to initiate upgrade: ${errorMessage}`);
       }
     });
   }

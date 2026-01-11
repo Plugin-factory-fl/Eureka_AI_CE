@@ -21,16 +21,9 @@ function registerSettingsHandlers() {
     try {
       const result = await chrome.storage.local.get(['settings']);
       const settings = result.settings || {
-        darkMode: false,
         autoCollapse: false,
         cacheDuration: 24
       };
-
-      // Update dark mode toggle
-      const darkModeToggle = document.getElementById('setting-dark-mode');
-      if (darkModeToggle) {
-        darkModeToggle.checked = settings.darkMode || false;
-      }
 
       // Update auto-collapse toggle
       const autoCollapseToggle = document.getElementById('setting-auto-collapse');
@@ -41,7 +34,7 @@ function registerSettingsHandlers() {
       return settings;
     } catch (error) {
       console.error('[SettingsPanel] Error loading settings:', error);
-      return { darkMode: false, autoCollapse: false, cacheDuration: 24 };
+      return { autoCollapse: false, cacheDuration: 24 };
     }
   }
 
@@ -70,23 +63,17 @@ function registerSettingsHandlers() {
     }
 
     // User confirmed, save settings
-    const darkModeToggle = document.getElementById('setting-dark-mode');
     const autoCollapseToggle = document.getElementById('setting-auto-collapse');
 
     const newSettings = {
-      darkMode: darkModeToggle ? darkModeToggle.checked : false,
       autoCollapse: autoCollapseToggle ? autoCollapseToggle.checked : false,
       cacheDuration: 24 // Can be made configurable later
     };
 
     await saveSettings(newSettings);
 
-    // Apply dark mode immediately
-    if (newSettings.darkMode) {
-      document.body.setAttribute('data-theme', 'dark');
-    } else {
-      document.body.removeAttribute('data-theme');
-    }
+    // Ensure light mode is always active (remove dark mode attribute if present)
+    document.body.removeAttribute('data-theme');
 
     // Trigger custom event for other modules to react to settings changes
     window.dispatchEvent(new CustomEvent('settingsUpdated', { detail: newSettings }));
@@ -128,15 +115,8 @@ function registerSettingsHandlers() {
  */
 async function initializeSettings() {
   try {
-    const result = await chrome.storage.local.get(['settings']);
-    const settings = result.settings || { darkMode: false };
-
-    // Apply dark mode if enabled
-    if (settings.darkMode) {
-      document.body.setAttribute('data-theme', 'dark');
-    } else {
-      document.body.removeAttribute('data-theme');
-    }
+    // Always ensure light mode is active (remove dark mode attribute if present)
+    document.body.removeAttribute('data-theme');
   } catch (error) {
     console.error('[SettingsPanel] Error initializing settings:', error);
   }

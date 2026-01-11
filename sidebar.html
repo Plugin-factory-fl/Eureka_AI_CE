@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="sidebar.css">
   <link rel="stylesheet" href="styles/SettingsPanel.css">
   <link rel="stylesheet" href="styles/LoginMenu.css">
-  <link rel="stylesheet" href="styles/Sidechat.css">
   <link rel="stylesheet" href="styles/NotesManager.css">
   <link rel="stylesheet" href="styles/FlashcardMaker.css">
 </head>
@@ -64,13 +63,13 @@
         </div>
       </section>
 
-      <!-- Sidechat Section -->
-      <section class="panel__section panel__section--sidechat" id="sidechat-section">
-        <div class="sidechat-container">
-          <div id="sidechat-messages" class="sidechat-messages"></div>
-          <div class="sidechat-input-container">
-            <input type="text" id="sidechat-input" class="sidechat-input" placeholder="Ask ChatGPT anything...">
-            <button id="sidechat-send" class="sidechat-send">
+      <!-- AI Chat Section (Always Visible) -->
+      <section class="panel__section panel__section--chat" id="chat-section">
+        <div class="chat-container">
+          <div id="chat-messages" class="chat-messages"></div>
+          <div class="chat-input-container">
+            <input type="text" id="question-input" class="question-input" placeholder="Ask a question about the content...">
+            <button id="send-question" class="send-question">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13"></line>
                 <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -99,7 +98,16 @@
       
       <div id="video-info" class="state hidden">
         <h2 id="video-title">Title will appear here</h2>
-        <p id="channel-name" class="channel">Channel name</p>
+        <div id="content-source-container" class="content-source-container">
+          <span id="channel-name" class="channel">Channel name</span>
+          <button id="copy-url-button" class="copy-url-button" title="Copy URL" style="display: none;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            Copy URL
+          </button>
+        </div>
         
         <div id="summary-container" class="summary-container hidden">
           <div class="summary-header" id="summary-header">
@@ -113,8 +121,9 @@
               </svg>
               Your SumVid Summary
               <div class="status-indicator">
-                <div class="loading-spinner"></div>
-                <span class="completion-badge">Done</span>
+                <span class="usage-badge">1 use</span>
+                <div class="loading-spinner" style="display: none;"></div>
+                <span class="completion-badge" style="display: none;">Done</span>
               </div>
             </h3>
             <div class="header-buttons">
@@ -161,38 +170,6 @@
           </div>
         </div>
 
-        <div id="questions-container" class="questions-container">
-          <div class="questions-header" id="questions-header">
-            <h3>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-              </svg>
-              Chat with current Page/Video/Document
-            </h3>
-            <button class="collapse-button">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-            </button>
-          </div>
-          <div id="questions-content" class="questions-content collapsed">
-            <div class="chat-container">
-              <div id="chat-messages" class="chat-messages"></div>
-              <div class="chat-input-container">
-                <input type="text" id="question-input" class="question-input" placeholder="Ask a question about the content...">
-                <button id="send-question" class="send-question">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div id="flashcard-container" class="flashcard-container">
           <div class="flashcard-header" id="flashcard-header">
             <h3>
@@ -203,8 +180,9 @@
               </svg>
               Flashcard Maker
               <div class="status-indicator">
-                <div class="loading-spinner"></div>
-                <span class="completion-badge">Done</span>
+                <span class="usage-badge">1 use</span>
+                <div class="loading-spinner" style="display: none;"></div>
+                <span class="completion-badge" style="display: none;">Done</span>
               </div>
             </h3>
             <div class="header-buttons">
@@ -234,8 +212,9 @@
               </svg>
               Test Your Knowledge
               <div class="status-indicator">
-                <div class="loading-spinner"></div>
-                <span class="completion-badge">Done</span>
+                <span class="usage-badge">1 use</span>
+                <div class="loading-spinner" style="display: none;"></div>
+                <span class="completion-badge" style="display: none;">Done</span>
               </div>
             </h3>
             <div class="header-buttons">
@@ -301,7 +280,7 @@
   </div>
 
   <!-- Note Editor Dialog -->
-  <dialog id="note-editor-dialog" class="modal modal--dark">
+  <dialog id="note-editor-dialog" class="note-editor-dialog">
     <form class="modal__content" id="note-editor-form">
       <header class="modal__header">
         <h2 id="note-editor-title">New Note</h2>
@@ -311,17 +290,17 @@
           </svg>
         </button>
       </header>
-      <div class="modal__body note-editor">
-        <div>
+      <div class="modal__body settings-form">
+        <div class="form-field">
           <label for="note-title" class="form-field__label">Title</label>
           <input type="text" id="note-title" class="note-editor__input" placeholder="Note title" required />
         </div>
-        <div>
+        <div class="form-field">
           <label for="note-folder" class="form-field__label">Folder</label>
           <input type="text" id="note-folder" class="note-editor__input" placeholder="Uncategorized" list="folders-list" />
           <datalist id="folders-list"></datalist>
         </div>
-        <div>
+        <div class="form-field">
           <label for="note-content" class="form-field__label">Content</label>
           <textarea id="note-content" class="note-editor__textarea" placeholder="Write your note here..." required></textarea>
         </div>
@@ -334,7 +313,7 @@
   </dialog>
 
   <!-- Settings Dialog -->
-  <dialog id="settings-dialog" class="modal modal--dark">
+  <dialog id="settings-dialog" class="settings-dialog">
     <form method="dialog" class="modal__content">
       <header class="modal__header">
         <h2>Settings</h2>
@@ -345,14 +324,6 @@
         </button>
       </header>
       <div class="modal__body settings-form">
-        <label class="form-field form-field--toggle">
-          <div class="form-field__label-group">
-            <span class="form-field__label">Dark Mode</span>
-            <span class="form-field__description">Toggle dark theme for better viewing in low light</span>
-          </div>
-          <input type="checkbox" id="setting-dark-mode" />
-          <span class="toggle-switch"></span>
-        </label>
         <label class="form-field form-field--toggle">
           <div class="form-field__label-group">
             <span class="form-field__label">Auto-collapse Sections</span>
@@ -370,7 +341,7 @@
   </dialog>
 
   <!-- Account/Login Dialog -->
-  <dialog id="account-dialog" class="modal modal--dark">
+  <dialog id="account-dialog" class="account-dialog">
     <form class="modal__content account__login-view" id="account-form">
       <header class="modal__header">
         <h2>Account</h2>
@@ -546,7 +517,6 @@
   <script src="Source/usageTracker.js"></script>
   <script src="Source/SettingsPanel.js"></script>
   <script src="Source/LoginMenu.js"></script>
-  <script src="Source/Sidechat.js"></script>
   <script src="Source/NotesManager.js"></script>
   <script src="Source/FlashcardMaker.js"></script>
   <script src="sidebar.js"></script>

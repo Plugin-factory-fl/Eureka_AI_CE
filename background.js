@@ -385,18 +385,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Use setPanelBehavior to automatically open side panel when icon is clicked
 // This is the recommended approach for Manifest V3 side panels
 
+// Enable side panel globally (without tabId) - must be done first
+chrome.sidePanel.setOptions({ enabled: true }).then(() => {
+  console.log('[SumVid] Side panel enabled globally');
+  
+  // Set panel behavior to automatically open when action icon is clicked
+  // This must be called AFTER enabling globally
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).then(() => {
+    console.log('[SumVid] Side panel behavior set');
+  }).catch(error => {
+    console.warn('[SumVid] Could not set side panel behavior:', error);
+  });
+}).catch(err => {
+  console.warn('[SumVid] Could not enable side panel globally:', err);
+});
+
+// Track tabs - don't clear content info, extension works on all pages
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url) {
-    // Enable side panel for all tabs
-    chrome.sidePanel.setOptions({
-      tabId: tabId,
-      enabled: true
-    }).catch(err => {
-      // Ignore errors if sidePanel API not available (older Chrome versions)
-      console.warn('[SumVid] SidePanel API not available:', err);
-    });
-    
-    // Don't clear content info - extension works on all pages
     // Content info will be updated by content script when page changes
   }
 });
@@ -404,11 +410,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Enable side panel globally when extension starts
 chrome.runtime.onStartup.addListener(async () => {
   try {
-    // Set panel behavior to automatically open when action icon is clicked
+    // Enable globally first, then set behavior
+    await chrome.sidePanel.setOptions({ enabled: true });
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    console.log('[SumVid] Side panel behavior set on startup');
+    console.log('[SumVid] Side panel enabled and behavior set on startup');
   } catch (error) {
-    console.warn('[SumVid] Could not set side panel behavior on startup:', error);
+    console.warn('[SumVid] Could not set side panel on startup:', error);
   }
 });
 
@@ -417,12 +424,13 @@ chrome.runtime.onInstalled.addListener(async () => {
   chrome.storage.local.remove('currentVideoInfo');
   chrome.action.setBadgeText({ text: '' });
   
-  // Set panel behavior to automatically open when action icon is clicked
+  // Enable globally first, then set behavior
   try {
+    await chrome.sidePanel.setOptions({ enabled: true });
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    console.log('[SumVid] Side panel behavior set on install');
+    console.log('[SumVid] Side panel enabled and behavior set on install');
   } catch (error) {
-    console.warn('[SumVid] Could not set side panel behavior on install:', error);
+    console.warn('[SumVid] Could not set side panel on install:', error);
   }
   
   chrome.storage.local.get(['darkMode'], (result) => {

@@ -393,6 +393,11 @@ function registerAccountHandlers() {
           },
         });
 
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || errorData.message || `Server error: ${response.status}`);
+        }
+
         const data = await response.json();
         if (data.url) {
           window.open(data.url, '_blank');
@@ -401,7 +406,7 @@ function registerAccountHandlers() {
         }
       } catch (error) {
         console.error('Upgrade error:', error);
-        alert('Failed to initiate upgrade. Please try again later.');
+        alert(`Failed to initiate upgrade: ${error.message || 'Please try again later.'}`);
       }
     });
   }

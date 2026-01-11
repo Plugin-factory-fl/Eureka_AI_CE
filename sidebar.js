@@ -1076,8 +1076,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     generateButton.textContent = 'Generating...';
     
     if (flashcardContent) {
+      flashcardContent.classList.remove('collapsed');
       flashcardContent.style.display = 'block';
-      flashcardContent.textContent = 'Generating flashcards...';
+      flashcardList.innerHTML = '<p style="text-align: center; padding: 20px; color: var(--text-secondary);">Generating flashcards...</p>';
     }
     flashcardContainer?.classList.remove('hidden');
     
@@ -1111,22 +1112,27 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       if (response?.error) {
         alert(response.error);
-        if (flashcardContent) {
-          flashcardContent.textContent = `Failed to generate flashcards: ${response.error}`;
+        if (flashcardList) {
+          flashcardList.innerHTML = `<p style="text-align: center; padding: 20px; color: #e74c3c;">Failed to generate flashcards: ${response.error}</p>`;
         }
       } else if (response?.success && response?.flashcards) {
         // Create flashcard set
         const setTitle = `${contentInfo.title || 'Untitled'} - Flashcards`;
         await window.SumVidFlashcardMaker.createFlashcardSet(setTitle, response.flashcards);
         await renderFlashcards();
+        // Ensure content is visible
+        if (flashcardContent) {
+          flashcardContent.classList.remove('collapsed');
+          flashcardContent.style.display = 'block';
+        }
       }
       
       await updateStatusCards();
     } catch (error) {
       console.error('[SumVid] Flashcard generation error:', error);
       alert('Failed to generate flashcards. Please try again.');
-      if (flashcardContent) {
-        flashcardContent.textContent = 'Failed to generate flashcards.';
+      if (flashcardList) {
+        flashcardList.innerHTML = '<p style="text-align: center; padding: 20px; color: #e74c3c;">Failed to generate flashcards.</p>';
       }
     } finally {
       generateButton.disabled = false;
@@ -1160,7 +1166,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Show the most relevant set (or most recent)
       const setToShow = relevantSets[0];
       
-      setToShow.cards.forEach((card, index) => {
+      // Limit to 10 cards as requested
+      const cardsToShow = setToShow.cards.slice(0, 10);
+      
+      cardsToShow.forEach((card, index) => {
         const cardElement = createFlashcardElement(card, index, setToShow.id);
         flashcardList.appendChild(cardElement);
       });
@@ -1172,6 +1181,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     div.className = 'flashcard-item';
     div.dataset.index = index;
     div.dataset.setId = setId;
+    
+    const inner = document.createElement('div');
+    inner.className = 'flashcard-item__inner';
     
     const front = document.createElement('div');
     front.className = 'flashcard-item__front';
@@ -1186,6 +1198,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     backText.className = 'flashcard-item__text';
     backText.textContent = card.answer || card.back || 'Answer';
     back.appendChild(backText);
+    
+    inner.appendChild(front);
+    inner.appendChild(back);
+    div.appendChild(inner);
     
     const actions = document.createElement('div');
     actions.className = 'flashcard-item__actions';
@@ -1216,14 +1232,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
     actions.appendChild(deleteBtn);
-    
-    div.appendChild(front);
-    div.appendChild(back);
     div.appendChild(actions);
     
     // Flip on click
     div.addEventListener('click', (e) => {
-      if (e.target === deleteBtn || deleteBtn.contains(e.target)) return;
+      if (e.target === deleteBtn || deleteBtn.contains(e.target) || actions.contains(e.target)) return;
       div.classList.toggle('flipped');
     });
     

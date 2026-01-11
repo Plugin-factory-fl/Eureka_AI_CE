@@ -11,7 +11,13 @@ import { verifyToken } from '../config/auth.js';
 const router = express.Router();
 
 const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID;
-const BACKEND_URL = process.env.BACKEND_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000';
+// Normalize BACKEND_URL - remove trailing slashes and ensure it's a valid URL
+const getBackendUrl = () => {
+  const url = process.env.BACKEND_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000';
+  // Remove trailing slash if present
+  return url.replace(/\/+$/, '');
+};
+const BACKEND_URL = getBackendUrl();
 // Stripe requires valid HTTPS URLs, so we use the backend URL for redirects
 // The extension will poll or check the session status after redirect
 const FRONTEND_URL = process.env.FRONTEND_URL || BACKEND_URL;
@@ -90,10 +96,26 @@ router.post('/create-session', async (req, res) => {
     // Create checkout session
     // Note: For Chrome extensions, we use the backend URL for redirects
     // The extension will handle checking the subscription status via webhooks or polling
-    const successUrl = `${BACKEND_URL}/checkout-success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${BACKEND_URL}/checkout-cancelled`;
+    // Validate BACKEND_URL is set and valid
+    if (!BACKEND_URL || BACKEND_URL.trim() === '') {
+      throw new Error('BACKEND_URL is not configured');
+    }
     
-    console.log('[Checkout] Using URLs:', { successUrl, cancelUrl, BACKEND_URL });
+    // Ensure URLs are valid and properly formatted
+    const baseUrl = BACKEND_URL.replace(/\/+$/, ''); // Remove trailing slashes
+    const successUrl = `${baseUrl}/checkout-success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${baseUrl}/checkout-cancelled`;
+    
+    // Validate URLs are properly formatted
+    try {
+      new URL(successUrl.replace('{CHECKOUT_SESSION_ID}', 'test'));
+      new URL(cancelUrl);
+    } catch (urlError) {
+      console.error('[Checkout] Invalid URL format:', urlError);
+      throw new Error(`Invalid URL configuration: ${urlError.message}`);
+    }
+    
+    console.log('[Checkout] Using URLs:', { successUrl, cancelUrl, BACKEND_URL: baseUrl });
     
     const session = await stripe.checkout.sessions.create({
       customer: customer.id,

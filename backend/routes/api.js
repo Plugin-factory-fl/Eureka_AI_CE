@@ -51,15 +51,25 @@ async function callOpenAI(messages, maxTokens = 1500, temperature = 0.7) {
 
 /**
  * POST /api/summarize
- * Generate video summary
+ * Generate summary for video, webpage, or PDF
  */
 router.post('/summarize', async (req, res) => {
   try {
-    const { videoId, transcript, context, title } = req.body;
+    const { videoId, transcript, context, title, contentType, contentUrl } = req.body;
     const userId = req.user.userId;
 
-    if (!transcript) {
-      return res.status(400).json({ error: 'Transcript is required' });
+    // Validate content type
+    const validContentTypes = ['video', 'webpage', 'pdf'];
+    const type = contentType || 'video'; // Default to video for backward compatibility
+    
+    if (!validContentTypes.includes(type)) {
+      return res.status(400).json({ error: `Invalid contentType. Must be one of: ${validContentTypes.join(', ')}` });
+    }
+
+    // Get content text (transcript for video, text for webpage/pdf)
+    const contentText = transcript || req.body.text || req.body.content;
+    if (!contentText) {
+      return res.status(400).json({ error: 'Content text is required' });
     }
 
     // Check usage limit before generation
@@ -91,27 +101,54 @@ router.post('/summarize', async (req, res) => {
       });
     }
 
-    // Clean transcript
-    const cleanTranscript = transcript.replace(/\[\d+:\d+\]/g, '').replace(/\s+/g, ' ').trim();
-    if (cleanTranscript.length < 10) {
-      return res.status(400).json({ error: 'Transcript is too short or empty' });
+    // Clean content text
+    let cleanContent = contentText;
+    if (type === 'video') {
+      // Remove timestamps from video transcripts
+      cleanContent = contentText.replace(/\[\d+:\d+\]/g, '').replace(/\s+/g, ' ').trim();
+    } else {
+      // Clean whitespace for webpages/PDFs
+      cleanContent = contentText.replace(/\s+/g, ' ').trim();
     }
 
-    // Calculate target word count
-    const transcriptWordCount = cleanTranscript.split(/\s+/).length;
-    const estimatedVideoMinutes = transcriptWordCount / 150;
-    const targetReadingMinutes = estimatedVideoMinutes / 10;
-    let targetWordCount = Math.round(targetReadingMinutes * 150);
-    targetWordCount = Math.max(300, Math.min(2000, targetWordCount));
-    const maxTokens = Math.round(targetWordCount * 1.2);
+    if (cleanContent.length < 10) {
+      return res.status(400).json({ error: 'Content is too short or empty' });
+    }
 
-    // Generate summary
+    // Calculate target word count based on content type
+    const contentWordCount = cleanContent.split(/\s+/).length;
+    let targetWordCount;
+    let maxTokens;
+
+    if (type === 'video') {
+      // Video: similar to existing logic
+      const estimatedVideoMinutes = contentWordCount / 150;
+      const targetReadingMinutes = estimatedVideoMinutes / 10;
+      targetWordCount = Math.round(targetReadingMinutes * 150);
+      targetWordCount = Math.max(300, Math.min(2000, targetWordCount));
+    } else {
+      // Webpage/PDF: summarize to 10-20% of original
+      targetWordCount = Math.round(contentWordCount * 0.15);
+      targetWordCount = Math.max(200, Math.min(2000, targetWordCount));
+    }
+
+    maxTokens = Math.round(targetWordCount * 1.2);
+
+    // Generate system prompt based on content type
     const contextPrompt = context ? `\n\nAdditional context: ${context}` : '';
-    const systemPrompt = `Summarize this video about ${title || 'the topic'} for a 5th grader, aiming for about ${targetWordCount} words. Use <h4> for headings and <strong> for important terms.${contextPrompt}`;
+    let systemPrompt;
+
+    if (type === 'video') {
+      systemPrompt = `Summarize this video about ${title || 'the topic'} for a 5th grader, aiming for about ${targetWordCount} words. Use <h4> for headings and <strong> for important terms.${contextPrompt}`;
+    } else if (type === 'webpage') {
+      systemPrompt = `Summarize this webpage "${title || 'article'}" for a 5th grader, aiming for about ${targetWordCount} words. Use <h4> for headings and <strong> for important terms. Keep it simple and easy to understand.${contextPrompt}`;
+    } else if (type === 'pdf') {
+      systemPrompt = `Summarize this PDF document "${title || 'document'}" for a 5th grader, aiming for about ${targetWordCount} words. Use <h4> for headings and <strong> for important terms. Keep it simple and easy to understand.${contextPrompt}`;
+    }
 
     const summary = await callOpenAI([
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: cleanTranscript }
+      { role: 'user', content: cleanContent }
     ], maxTokens);
 
     // Get updated usage
@@ -123,6 +160,7 @@ router.post('/summarize', async (req, res) => {
 
     res.json({
       summary,
+      contentType: type,
       usage: {
         enhancementsUsed: updatedUsage.enhancements_used,
         enhancementsLimit: updatedUsage.enhancements_limit,
@@ -264,19 +302,139 @@ Follow these rules:
 
 /**
  * POST /api/qa
- * Answer questions about the video
+ * Answer questions about video, webpage, or PDF
  */
 router.post('/qa', async (req, res) => {
   try {
-    const { videoId, transcript, question, chatHistory, summary, title } = req.body;
+    const { videoId, transcript, question, chatHistory, summary, title, contentType, text, contentUrl } = req.body;
     const userId = req.user.userId;
 
     if (!question) {
       return res.status(400).json({ error: 'Question is required' });
     }
 
-    if (!transcript && !summary) {
-      return res.status(400).json({ error: 'Transcript or summary is required' });
+    // Determine content type
+    const type = contentType || 'video'; // Default to video for backward compatibility
+    const contentText = type === 'video' ? (transcript || '') : (text || '');
+
+    if (!contentText && !summary) {
+      return res.status(400).json({ error: 'Content text or summary is required' });
+    }
+
+    // Check usage limit before generation
+    await resetDailyUsageIfNeeded(userId);
+    const usageResult = await query(
+      'SELECT enhancements_used, enhancements_limit FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (usageResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = usageResult.rows[0];
+    if (user.enhancements_used >= user.enhancements_limit) {
+      return res.status(403).json({
+        error: 'Daily enhancement limit reached',
+        enhancementsUsed: user.enhancements_used,
+        enhancementsLimit: user.enhancements_limit
+      });
+    }
+
+    // Increment usage before generation
+    const incrementResult = await incrementUsage(userId);
+    if (!incrementResult.success) {
+      return res.status(403).json({
+        error: incrementResult.error || 'Failed to increment usage',
+        usage: incrementResult.usage
+      });
+    }
+
+    // Build system message based on content type
+    let systemContent;
+    const contentTitle = title || (type === 'video' ? 'unknown video' : type === 'pdf' ? 'unknown document' : 'unknown page');
+    
+    if (type === 'video') {
+      systemContent = `You are helping a 5th grader understand a YouTube video titled "${contentTitle}". Give short, simple answers that are easy to understand. Use basic words and short sentences. If you're not sure about something, just say so in a simple way.`;
+    } else if (type === 'webpage') {
+      systemContent = `You are helping a 5th grader understand a webpage titled "${contentTitle}". Give short, simple answers that are easy to understand. Use basic words and short sentences. If you're not sure about something, just say so in a simple way.`;
+    } else if (type === 'pdf') {
+      systemContent = `You are helping a 5th grader understand a PDF document titled "${contentTitle}". Give short, simple answers that are easy to understand. Use basic words and short sentences. If you're not sure about something, just say so in a simple way.`;
+    }
+
+    systemContent += `
+
+Rules:
+1. Keep answers short (2-3 sentences if possible)
+2. Use words that a 5th grader knows
+3. Break down complex ideas into simple parts
+4. Use examples when it helps
+5. Be friendly and encouraging
+6. If you need to use a big word, explain what it means
+7. Focus on the main points
+8. Keep explanations clear and direct`;
+
+    // Build messages array with chat history
+    const messages = [
+      {
+        role: 'system',
+        content: systemContent
+      }
+    ];
+
+    // Add chat history if provided
+    if (chatHistory && Array.isArray(chatHistory)) {
+      chatHistory.forEach(msg => {
+        if (msg.role && msg.content) {
+          messages.push({ role: msg.role, content: msg.content });
+        }
+      });
+    }
+
+    // Add current context
+    const contentLabel = type === 'video' ? 'Video' : type === 'pdf' ? 'PDF document' : 'Webpage';
+    const contextContent = summary
+      ? `${contentLabel} content: ${contentText || ''}\n\n${contentLabel} summary: ${summary}\n\nQuestion: ${question}`
+      : `${contentLabel} content: ${contentText}\n\nQuestion: ${question}`;
+
+    messages.push({ role: 'user', content: contextContent });
+
+    // Generate answer
+    const answer = await callOpenAI(messages, 150, 0.7);
+
+    // Get updated usage
+    const updatedUsageResult = await query(
+      'SELECT enhancements_used, enhancements_limit FROM users WHERE id = $1',
+      [userId]
+    );
+    const updatedUsage = updatedUsageResult.rows[0];
+
+    res.json({
+      answer,
+      contentType: type,
+      usage: {
+        enhancementsUsed: updatedUsage.enhancements_used,
+        enhancementsLimit: updatedUsage.enhancements_limit,
+        remaining: Math.max(0, updatedUsage.enhancements_limit - updatedUsage.enhancements_used)
+      }
+    });
+  } catch (error) {
+    console.error('Q&A error:', error);
+    res.status(500).json({ error: error.message || 'Failed to answer question' });
+  }
+});
+
+/**
+ * POST /api/chat
+ * Simple ChatGPT chat (no context from video/webpage)
+ */
+router.post('/chat', async (req, res) => {
+  try {
+    const { message, chatHistory } = req.body;
+    const userId = req.user.userId;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
     }
 
     // Check usage limit before generation
@@ -312,17 +470,7 @@ router.post('/qa', async (req, res) => {
     const messages = [
       {
         role: 'system',
-        content: `You are helping a 5th grader understand a YouTube video titled "${title || 'unknown video'}". Give short, simple answers that are easy to understand. Use basic words and short sentences. If you're not sure about something, just say so in a simple way.
-
-Rules:
-1. Keep answers short (2-3 sentences if possible)
-2. Use words that a 5th grader knows
-3. Break down complex ideas into simple parts
-4. Use examples when it helps
-5. Be friendly and encouraging
-6. If you need to use a big word, explain what it means
-7. Focus on the main points
-8. Keep explanations clear and direct`
+        content: `You are a helpful AI assistant. Give clear, concise answers. Keep responses simple and easy to understand.`
       }
     ];
 
@@ -335,15 +483,11 @@ Rules:
       });
     }
 
-    // Add current context
-    const contextContent = summary
-      ? `Video transcript: ${transcript || ''}\n\nVideo summary: ${summary}\n\nQuestion: ${question}`
-      : `Video transcript: ${transcript}\n\nQuestion: ${question}`;
+    // Add current message
+    messages.push({ role: 'user', content: message });
 
-    messages.push({ role: 'user', content: contextContent });
-
-    // Generate answer
-    const answer = await callOpenAI(messages, 150, 0.7);
+    // Generate reply
+    const reply = await callOpenAI(messages, 500, 0.7);
 
     // Get updated usage
     const updatedUsageResult = await query(
@@ -353,7 +497,7 @@ Rules:
     const updatedUsage = updatedUsageResult.rows[0];
 
     res.json({
-      answer,
+      reply,
       usage: {
         enhancementsUsed: updatedUsage.enhancements_used,
         enhancementsLimit: updatedUsage.enhancements_limit,
@@ -361,8 +505,141 @@ Rules:
       }
     });
   } catch (error) {
-    console.error('Q&A error:', error);
-    res.status(500).json({ error: error.message || 'Failed to answer question' });
+    console.error('Chat error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate reply' });
+  }
+});
+
+/**
+ * POST /api/flashcards
+ * Generate flashcards from content (video, webpage, PDF)
+ */
+router.post('/flashcards', async (req, res) => {
+  try {
+    const { contentType, transcript, text, title } = req.body;
+    const userId = req.user.userId;
+
+    // Determine content type
+    const type = contentType || 'video';
+    const contentText = type === 'video' ? (transcript || '') : (text || '');
+
+    if (!contentText) {
+      return res.status(400).json({ error: 'Content text is required' });
+    }
+
+    // Check usage limit before generation
+    await resetDailyUsageIfNeeded(userId);
+    const usageResult = await query(
+      'SELECT enhancements_used, enhancements_limit FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (usageResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = usageResult.rows[0];
+    if (user.enhancements_used >= user.enhancements_limit) {
+      return res.status(403).json({
+        error: 'Daily enhancement limit reached',
+        enhancementsUsed: user.enhancements_used,
+        enhancementsLimit: user.enhancements_limit
+      });
+    }
+
+    // Increment usage before generation
+    const incrementResult = await incrementUsage(userId);
+    if (!incrementResult.success) {
+      return res.status(403).json({
+        error: incrementResult.error || 'Failed to increment usage',
+        usage: incrementResult.usage
+      });
+    }
+
+    // Clean content text
+    const cleanContent = type === 'video' 
+      ? contentText.replace(/\[\d+:\d+\]/g, '').replace(/\s+/g, ' ').trim()
+      : contentText.replace(/\s+/g, ' ').trim();
+
+    if (cleanContent.length < 50) {
+      return res.status(400).json({ error: 'Content is too short to generate flashcards' });
+    }
+
+    // Generate flashcards
+    const contentLabel = type === 'video' ? 'video' : type === 'pdf' ? 'document' : 'page';
+    const systemPrompt = `You are a flashcard generator. Create flashcards from the following ${contentLabel} content about "${title || 'the topic'}".
+
+Generate 5-10 flashcards. Each flashcard should have:
+- A clear, concise question on the front
+- A simple, easy-to-understand answer on the back (written for a 5th grader)
+
+Format your response as a JSON array where each flashcard is an object with "question" and "answer" fields.
+
+Example format:
+[
+  {"question": "What is photosynthesis?", "answer": "Photosynthesis is how plants make food using sunlight, water, and air."},
+  {"question": "What do plants need to grow?", "answer": "Plants need sunlight, water, soil, and air to grow."}
+]
+
+Return ONLY the JSON array, no additional text.`;
+
+    const response = await callOpenAI([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: cleanContent }
+    ], 2000);
+
+    // Parse JSON response
+    let flashcards;
+    try {
+      // Try to extract JSON from response (may have markdown code blocks)
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        flashcards = JSON.parse(jsonMatch[0]);
+      } else {
+        flashcards = JSON.parse(response);
+      }
+    } catch (parseError) {
+      console.error('[API] Error parsing flashcard JSON:', parseError);
+      // Fallback: try to create simple flashcards from response
+      const lines = response.split('\n').filter(line => line.trim());
+      flashcards = lines.slice(0, 10).map((line, index) => ({
+        question: `Question ${index + 1}`,
+        answer: line.trim()
+      }));
+    }
+
+    // Validate flashcards structure
+    if (!Array.isArray(flashcards)) {
+      flashcards = [];
+    }
+    
+    flashcards = flashcards
+      .filter(card => card && (card.question || card.front) && (card.answer || card.back))
+      .map(card => ({
+        question: card.question || card.front || '',
+        answer: card.answer || card.back || ''
+      }))
+      .slice(0, 10); // Limit to 10 flashcards
+
+    // Get updated usage
+    const updatedUsageResult = await query(
+      'SELECT enhancements_used, enhancements_limit FROM users WHERE id = $1',
+      [userId]
+    );
+    const updatedUsage = updatedUsageResult.rows[0];
+
+    res.json({
+      flashcards,
+      contentType: type,
+      usage: {
+        enhancementsUsed: updatedUsage.enhancements_used,
+        enhancementsLimit: updatedUsage.enhancements_limit,
+        remaining: Math.max(0, updatedUsage.enhancements_limit - updatedUsage.enhancements_used)
+      }
+    });
+  } catch (error) {
+    console.error('Flashcard generation error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate flashcards' });
   }
 });
 

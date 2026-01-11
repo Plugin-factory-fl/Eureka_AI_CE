@@ -1,0 +1,120 @@
+/* Sidechat Styles */
+.panel__section--sidechat {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: #ffffff;
+}
+
+.sidechat-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidechat-messages {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: #f5f7fb;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.sidechat-message {
+  padding: 6px 10px;
+  border-radius: 6px;
+  word-wrap: break-word;
+}
+
+.sidechat-message--user {
+  background: #e3f2fd;
+  color: #1976d2;
+  align-self: flex-end;
+  max-width: 80%;
+}
+
+.sidechat-message--assistant {
+  background: #ffffff;
+  color: #333333;
+  align-self: flex-start;
+  max-width: 80%;
+  border: 1px solid #e0e0e0;
+}
+
+.sidechat-input-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sidechat-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.sidechat-input:focus {
+  border-color: #1976d2;
+}
+
+.sidechat-send {
+  padding: 8px 12px;
+  background: #1976d2;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.sidechat-send:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+.sidechat-send:disabled {
+  background: #bdbdbd;
+  cursor: not-allowed;
+}
+
+/* Dark mode support */
+body.dark-mode .panel__section--sidechat {
+  background: #1f2a44;
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .sidechat-messages {
+  background: #162036;
+}
+
+body.dark-mode .sidechat-message--user {
+  background: #1976d2;
+  color: #ffffff;
+}
+
+body.dark-mode .sidechat-message--assistant {
+  background: #2a3441;
+  color: #e9edff;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .sidechat-input {
+  background: #162036;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #e9edff;
+}
+
+body.dark-mode .sidechat-input:focus {
+  border-color: #1976d2;
+}

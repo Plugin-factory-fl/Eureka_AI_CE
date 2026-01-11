@@ -1,6 +1,8 @@
 // Backend API configuration
 const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com'; // Update with your backend URL
 
+console.log('[SumVid] Background script loaded');
+
 // Helper function to get JWT token from storage
 async function getAuthToken() {
   return new Promise((resolve) => {
@@ -81,17 +83,33 @@ function sanitizeInput(input) {
 let currentVideoInfo = null;
 let transcriptCache = new Map();
 
-// Helper to generate summary via backend API
-async function generateSummary(transcript, context, title, videoId) {
-  const cleanTranscript = transcript.replace(/\[\d+:\d+\]/g, '').replace(/\s+/g, ' ').trim();
-  if (cleanTranscript.length < 10) throw new Error('Transcript is too short or empty');
+// Helper to generate summary via backend API (supports video, webpage, PDF)
+async function generateSummary(contentText, context, title, contentId, contentType = 'video') {
+  const cleanContent = contentType === 'video' 
+    ? contentText.replace(/\[\d+:\d+\]/g, '').replace(/\s+/g, ' ').trim()
+    : contentText.replace(/\s+/g, ' ').trim();
+    
+  if (cleanContent.length < 10) {
+    throw new Error(contentType === 'video' ? 'Transcript is too short or empty' : 'Content is too short or empty');
+  }
 
-  const response = await callBackendAPI('/api/summarize', 'POST', {
-    videoId: videoId || null,
-    transcript: cleanTranscript,
+  const requestBody = {
+    contentType: contentType,
     context: context || '',
-    title: title || 'unknown video'
-  });
+    title: title || (contentType === 'video' ? 'unknown video' : contentType === 'pdf' ? 'unknown document' : 'unknown page')
+  };
+
+  if (contentType === 'video') {
+    requestBody.videoId = contentId || null;
+    requestBody.transcript = cleanContent;
+  } else {
+    requestBody.text = cleanContent;
+    if (contentType === 'pdf') {
+      requestBody.contentUrl = contentId; // PDF URL
+    }
+  }
+
+  const response = await callBackendAPI('/api/summarize', 'POST', requestBody);
 
   return response.summary;
 }
@@ -118,35 +136,58 @@ async function generateQuiz(transcript, summary, context, title, videoId) {
 // Auto-generation removed - users must manually trigger generation via buttons
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'VIDEO_INFO') {
+  if (message.type === 'VIDEO_INFO' || message.type === 'CONTENT_INFO') {
     (async () => {
       try {
         const url = sanitizeInput(message.data?.url);
         if (!url) throw new Error('No URL provided');
         
-        const videoId = new URL(url).searchParams.get('v');
-        if (!videoId) throw new Error('Invalid YouTube URL');
+        const contentType = message.data.type || 'video';
         
-        currentVideoInfo = {
+        // Store content info (handles video, webpage, PDF)
+        const contentInfo = {
           ...message.data,
-          title: sanitizeInput(message.data.title),
-          channel: sanitizeInput(message.data.channel),
-          transcript: message.data.transcript ? sanitizeInput(message.data.transcript) : null
+          type: contentType,
+          title: sanitizeInput(message.data.title || 'Untitled'),
+          timestamp: new Date().toISOString()
         };
+
+        // Sanitize content text
+        if (contentType === 'video' && message.data.transcript) {
+          contentInfo.transcript = sanitizeInput(message.data.transcript);
+        } else if ((contentType === 'webpage' || contentType === 'pdf') && message.data.text) {
+          contentInfo.text = sanitizeInput(message.data.text);
+        }
+
+        // Store as currentContentInfo (replaces currentVideoInfo)
+        await chrome.storage.local.set({ currentContentInfo: contentInfo });
         
-        await chrome.storage.local.set({ currentVideoInfo });
-        
-        if (currentVideoInfo.transcript && !currentVideoInfo.error) {
-          transcriptCache.set(videoId, currentVideoInfo.transcript);
-          // Don't auto-generate - user must click buttons manually
+        // Legacy support: also store as currentVideoInfo if it's a video
+        if (contentType === 'video') {
+          const videoId = new URL(url).searchParams.get('v');
+          if (videoId) {
+            currentVideoInfo = {
+              ...contentInfo,
+              channel: sanitizeInput(message.data.channel || 'Unknown Channel'),
+              transcript: contentInfo.transcript || null
+            };
+            await chrome.storage.local.set({ currentVideoInfo });
+            
+            if (currentVideoInfo.transcript && !currentVideoInfo.error) {
+              transcriptCache.set(videoId, currentVideoInfo.transcript);
+            } else {
+              chrome.action.setBadgeText({ text: 'X' });
+              chrome.action.setBadgeBackgroundColor({ color: '#808080' });
+            }
+          }
         } else {
-          chrome.action.setBadgeText({ text: 'X' });
-          chrome.action.setBadgeBackgroundColor({ color: '#808080' });
+          // For webpages/PDFs, clear badge
+          chrome.action.setBadgeText({ text: '' });
         }
         
         sendResponse({ success: true });
       } catch (error) {
-        console.error('Error processing video info:', error);
+        console.error('[SumVid] Error processing content info:', error);
         sendResponse({ success: false, error: error.message });
       }
     })();
@@ -154,11 +195,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === 'summarize') {
     (async () => {
       try {
-        const videoId = currentVideoInfo?.url ? new URL(currentVideoInfo.url).searchParams.get('v') : null;
-        const summary = await generateSummary(message.transcript, message.context, currentVideoInfo?.title, videoId);
+        // Get current content info
+        const stored = await chrome.storage.local.get(['currentContentInfo']);
+        const contentInfo = stored.currentContentInfo || currentVideoInfo;
+        
+        if (!contentInfo) {
+          throw new Error('No content available to summarize');
+        }
+
+        const contentType = contentInfo.type || 'video';
+        const contentText = contentType === 'video' ? message.transcript || contentInfo.transcript : (message.text || contentInfo.text);
+        
+        if (!contentText) {
+          throw new Error('No content text available');
+        }
+
+        const contentId = contentType === 'video' 
+          ? (contentInfo.url ? new URL(contentInfo.url).searchParams.get('v') : null)
+          : null;
+
+        const summary = await generateSummary(contentText, message.context, contentInfo.title, contentId, contentType);
         sendResponse({ success: true, summary });
       } catch (error) {
-        console.error('Summarization error:', error);
+        console.error('[SumVid] Summarization error:', error);
         sendResponse({ success: false, error: error.message || 'Failed to generate summary' });
       }
     })();
@@ -178,21 +237,107 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === 'ask-question') {
     (async () => {
       try {
-        const videoId = currentVideoInfo?.url ? new URL(currentVideoInfo.url).searchParams.get('v') : null;
-        const response = await callBackendAPI('/api/qa', 'POST', {
-          videoId: videoId || null,
-          transcript: message.transcript || '',
+        // Get current content info
+        const stored = await chrome.storage.local.get(['currentContentInfo']);
+        const contentInfo = stored.currentContentInfo || currentVideoInfo;
+        
+        if (!contentInfo) {
+          throw new Error('No content available for questions');
+        }
+
+        const contentType = contentInfo.type || 'video';
+        const contentId = contentType === 'video' 
+          ? (contentInfo.url ? new URL(contentInfo.url).searchParams.get('v') : null)
+          : null;
+        
+        const contentText = contentType === 'video' 
+          ? (message.transcript || contentInfo.transcript || '')
+          : (message.text || contentInfo.text || '');
+
+        const requestBody = {
+          contentType: contentType,
           question: message.question,
           chatHistory: message.chatHistory || null,
           summary: message.summary || '',
-          title: currentVideoInfo?.title || 'unknown video'
-        });
+          title: contentInfo.title || (contentType === 'video' ? 'unknown video' : contentType === 'pdf' ? 'unknown document' : 'unknown page')
+        };
+
+        if (contentType === 'video') {
+          requestBody.videoId = contentId || null;
+          requestBody.transcript = contentText;
+        } else {
+          requestBody.text = contentText;
+          if (contentType === 'pdf') {
+            requestBody.contentUrl = contentInfo.pdfUrl || contentInfo.url;
+          }
+        }
+
+        const response = await callBackendAPI('/api/qa', 'POST', requestBody);
         sendResponse({ success: true, answer: response.answer });
       } catch (error) {
-        console.error('Question answering error:', error);
+        console.error('[SumVid] Question answering error:', error);
         sendResponse({
           success: false,
           error: error.message || 'Failed to answer question'
+        });
+      }
+    })();
+    return true;
+  } else if (message.action === 'generate-flashcards') {
+    (async () => {
+      try {
+        // Get current content info
+        const stored = await chrome.storage.local.get(['currentContentInfo']);
+        const contentInfo = stored.currentContentInfo || currentVideoInfo;
+        
+        if (!contentInfo) {
+          throw new Error('No content available to generate flashcards from');
+        }
+
+        const contentType = message.contentType || contentInfo.type || 'video';
+        const contentText = contentType === 'video' 
+          ? (message.transcript || contentInfo.transcript || '')
+          : (message.text || contentInfo.text || '');
+
+        if (!contentText) {
+          throw new Error('No content text available');
+        }
+
+        const requestBody = {
+          contentType: contentType,
+          title: message.title || contentInfo.title || (contentType === 'video' ? 'unknown video' : contentType === 'pdf' ? 'unknown document' : 'unknown page')
+        };
+
+        if (contentType === 'video') {
+          requestBody.transcript = contentText;
+        } else {
+          requestBody.text = contentText;
+        }
+
+        const response = await callBackendAPI('/api/flashcards', 'POST', requestBody);
+        sendResponse({ success: true, flashcards: response.flashcards });
+      } catch (error) {
+        console.error('[SumVid] Flashcard generation error:', error);
+        sendResponse({
+          success: false,
+          error: error.message || 'Failed to generate flashcards'
+        });
+      }
+    })();
+    return true;
+  } else if (message.action === 'sidechat') {
+    (async () => {
+      try {
+        const response = await callBackendAPI('/api/chat', 'POST', {
+          message: message.message,
+          chatHistory: message.chatHistory || []
+        });
+        sendResponse({ success: true, reply: response.reply });
+      } catch (error) {
+        console.error('[SumVid] Sidechat error:', error);
+        sendResponse({
+          success: false,
+          error: error.message || 'Failed to send message'
         });
       }
     })();
@@ -217,24 +362,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true;
+  } else if (message.action === 'selection-explain' || 
+             message.action === 'selection-summarize' || 
+             message.action === 'selection-flashcard' || 
+             message.action === 'selection-notes') {
+    // Handle selection toolbar actions
+    // These actions will route to sidebar functionality
+    // For now, just send message to sidebar (will be handled when sidebar is open)
+    chrome.storage.local.set({ 
+      pendingSelectionAction: {
+        action: message.action,
+        text: message.text,
+        timestamp: Date.now()
+      }
+    });
+    sendResponse({ success: true });
+    return true;
   }
   return true;
 });
 
-chrome.action.onClicked.addListener((tab) => {
-  if (tab.url.includes('youtube.com/watch')) {
-    chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR' });
+// Use setPanelBehavior to automatically open side panel when icon is clicked
+// This is the recommended approach for Manifest V3 side panels
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    // Enable side panel for all tabs
+    chrome.sidePanel.setOptions({
+      tabId: tabId,
+      enabled: true
+    }).catch(err => {
+      // Ignore errors if sidePanel API not available (older Chrome versions)
+      console.warn('[SumVid] SidePanel API not available:', err);
+    });
+    
+    // Don't clear content info - extension works on all pages
+    // Content info will be updated by content script when page changes
   }
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('youtube.com/watch')) {
-    chrome.action.setBadgeText({ text: '...' });
-    chrome.action.setBadgeBackgroundColor({ color: '#808080' });
-  } else if (changeInfo.status === 'complete' && tab.url && !tab.url.includes('youtube.com')) {
-    chrome.action.setBadgeText({ text: '' });
-    currentVideoInfo = null;
-    chrome.storage.local.remove('currentVideoInfo');
+// Enable side panel globally when extension starts
+chrome.runtime.onStartup.addListener(async () => {
+  try {
+    // Set panel behavior to automatically open when action icon is clicked
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    console.log('[SumVid] Side panel behavior set on startup');
+  } catch (error) {
+    console.warn('[SumVid] Could not set side panel behavior on startup:', error);
   }
 });
 
@@ -242,6 +416,14 @@ chrome.runtime.onInstalled.addListener(async () => {
   transcriptCache.clear();
   chrome.storage.local.remove('currentVideoInfo');
   chrome.action.setBadgeText({ text: '' });
+  
+  // Set panel behavior to automatically open when action icon is clicked
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    console.log('[SumVid] Side panel behavior set on install');
+  } catch (error) {
+    console.warn('[SumVid] Could not set side panel behavior on install:', error);
+  }
   
   chrome.storage.local.get(['darkMode'], (result) => {
     if (result.darkMode === undefined) {

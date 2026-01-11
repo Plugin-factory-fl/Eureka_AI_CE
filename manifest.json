@@ -8,12 +8,14 @@
   "permissions": [
     "activeTab",
     "storage",
-    "tabs"
+    "tabs",
+    "sidePanel"
   ],
   "host_permissions": [
     "*://*.youtube.com/*",
     "https://api.openai.com/*",
-    "https://*.onrender.com/*"
+    "https://*.onrender.com/*",
+    "<all_urls>"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.openai.com https://sumvid-learn-backend.onrender.com https://*.onrender.com"
@@ -21,19 +23,26 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "sidebar.html",
-        "sidebar.css",
-        "sidebar.js",
         "icons/icon48.png",
         "Source/StickyButton.js",
         "Source/LoginMenu.js",
         "Source/SettingsPanel.js",
         "Source/usageTracker.js",
+        "Source/ContentExtractor.js",
+        "Source/PDFExtractor.js",
+        "Source/Sidechat.js",
+        "Source/SelectionToolbar.js",
+        "Source/NotesManager.js",
+        "Source/FlashcardMaker.js",
         "styles/StickyButton.css",
         "styles/LoginMenu.css",
-        "styles/SettingsPanel.css"
+        "styles/SettingsPanel.css",
+        "styles/Sidechat.css",
+        "styles/SelectionToolbar.css",
+        "styles/NotesManager.css",
+        "styles/FlashcardMaker.css"
       ],
-      "matches": ["*://*.youtube.com/*"]
+      "matches": ["<all_urls>"]
     }
   ],
   "action": {
@@ -53,10 +62,15 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "side_panel": {
+    "default_path": "sidebar.html"
+  },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
-      "js": ["content.js"]
+      "matches": ["<all_urls>"],
+      "js": ["content.js", "Source/SelectionToolbar.js"],
+      "css": ["styles/SelectionToolbar.css"],
+      "run_at": "document_idle"
     }
   ]
 }

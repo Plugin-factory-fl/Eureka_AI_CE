@@ -1,0 +1,75 @@
+/* Selection Toolbar Styles */
+#sumvid-selection-toolbar {
+  position: fixed;
+  z-index: 2147483647;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+#sumvid-selection-toolbar.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sumvid-selection-toolbar__button {
+  padding: 8px 14px;
+  background: rgba(25, 118, 210, 0.95);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: background-color 0.2s;
+}
+
+.sumvid-selection-toolbar__button:hover {
+  background: rgba(21, 101, 192, 0.95);
+}
+
+.sumvid-selection-toolbar__dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  min-width: 220px;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sumvid-selection-toolbar__dropdown.is-visible {
+  display: flex;
+}
+
+.sumvid-selection-toolbar__action {
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: left;
+  font-size: 13px;
+  color: #333333;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.sumvid-selection-toolbar__action:last-child {
+  border-bottom: none;
+}
+
+.sumvid-selection-toolbar__action:hover:not(:disabled) {
+  background: #f5f7fb;
+}
+
+.sumvid-selection-toolbar__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

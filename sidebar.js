@@ -21,6 +21,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const summaryHeader = document.getElementById('summary-header');
   const collapseButton = document.querySelector('.collapse-button');
   const themeToggle = document.getElementById('theme-toggle');
+  const flashcardContainer = document.getElementById('flashcard-container');
+  const flashcardContent = document.getElementById('flashcard-content');
+  const flashcardHeader = document.getElementById('flashcard-header');
+  const flashcardList = document.getElementById('flashcard-list');
+  const flashcardEmpty = document.getElementById('flashcard-empty');
+
   const quizContainer = document.getElementById('quiz-container');
   const quizContent = document.getElementById('quiz-content');
   const quizHeader = document.getElementById('quiz-header');
@@ -919,87 +925,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
   
-  // Function to request fresh video info
-  async function requestVideoInfo() {
+  // Function to request fresh content info (works for any content type)
+  async function requestContentInfo() {
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const currentTab = tabs?.[0];
       
-      if (currentTab?.id && currentTab.url?.includes('youtube.com/watch')) {
-        const response = await sendMessageWithTimeout({ type: 'REQUEST_VIDEO_INFO' });
+      if (currentTab?.id) {
+        const response = await sendMessageWithTimeout({ type: 'REQUEST_CONTENT_INFO' });
         if (response?.error) {
-          console.warn('Error requesting video info:', response.error);
-          showState(noVideoState);
+          console.warn('Error requesting content info:', response.error);
+          // Don't show error state - just wait for content script to send info
         }
-      } else {
-        showState(noVideoState);
       }
     } catch (error) {
-      console.warn('Error requesting video info:', error);
-      showState(noVideoState);
+      console.warn('Error requesting content info:', error);
+      // Don't show error state - allow extension to work anyway
     }
   }
 
   // Show loading state initially
   showState(loadingState);
   
-  // Check if we need to load fresh video info or can use cached content
+  // Initialize extension for any content type (video, webpage, PDF)
   async function initializeExtension() {
     try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const currentTab = tabs?.[0];
+      // Check for cached content info (works for any content type)
+      const stored = await chrome.storage.local.get(['currentContentInfo', 'currentVideoInfo']);
+      const contentInfo = stored.currentContentInfo || stored.currentVideoInfo;
       
-      if (!currentTab?.url?.includes('youtube.com/watch')) {
-        showState(noVideoState);
+      if (contentInfo) {
+        // We have content info, display it
+        await displayVideoInfo(contentInfo);
         return;
       }
       
-      const videoId = getVideoId(currentTab.url);
-      if (!videoId) {
-        showState(noVideoState);
-        return;
-      }
-      
-      const summaryKey = `summary_${videoId}`;
-      const quizKey = `quiz_${videoId}`;
-      const chatKey = `chat_${videoId}`;
-      const statusKey = `generationStatus_${videoId}`;
-
-      const storedData = await chrome.storage.local.get([summaryKey, quizKey, chatKey, statusKey, 'currentVideoInfo']);
-      
-      const cachedSummary = storedData[summaryKey]?.content;
-      const cachedQuiz = storedData[quizKey]?.content;
-      const cachedChat = storedData[chatKey]?.content;
-      const generationStatus = storedData[statusKey];
-
-      const storedVideoInfo = storedData.currentVideoInfo && getVideoId(storedData.currentVideoInfo.url) === videoId 
-                                ? storedData.currentVideoInfo 
-                                : null;
-
-      if (cachedSummary && storedVideoInfo) {
-        console.log('Found cached summary and video info. Displaying from cache.');
-        await displayVideoInfoFromCache(storedVideoInfo, videoId, cachedSummary, cachedQuiz, cachedChat);
-      } else if (generationStatus === 'in_progress') {
-        console.log('Generation is in progress. Displaying loading state.');
-        showState(loadingState);
-        const loadingText = loadingState.querySelector('p');
-        if (loadingText) loadingText.textContent = 'Generating summary & quiz...';
-        // Show status section
-        const statusSection = document.getElementById('status-section');
-        if (statusSection) {
-          statusSection.style.display = 'flex';
-        }
-        await updateStatusCards();
-      } else {
-        console.log('No cached content found. Requesting info.');
-        showState(loadingState);
-        const loadingText = loadingState.querySelector('p');
-        if (loadingText) loadingText.textContent = 'Extracting video transcript...';
-        requestVideoInfo();
-      }
+      // No cached content yet, request it from content script
+      // The content script will send content info when ready
+      showState(loadingState);
+      const loadingText = loadingState.querySelector('p');
+      if (loadingText) loadingText.textContent = 'Extracting content...';
+      requestContentInfo();
     } catch (error) {
       console.warn('Error initializing extension:', error);
-      showState(noVideoState);
+      // Don't show error state - show interface anyway and let content script populate it
+      showState(videoInfoState);
     }
   }
   
@@ -1033,6 +1003,471 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!window.UsageTracker) {
       console.warn('[SumVid] UsageTracker module not loaded');
     }
+    if (window.SumVidSidechat) {
+      window.SumVidSidechat.init();
+    } else {
+      console.warn('[SumVid] SumVidSidechat module not loaded');
+    }
+    if (window.SumVidNotesManager) {
+      window.SumVidNotesManager.init();
+      initializeNotesUI();
+    } else {
+      console.warn('[SumVid] SumVidNotesManager module not loaded');
+    }
+    if (window.SumVidFlashcardMaker) {
+      window.SumVidFlashcardMaker.init();
+      initializeFlashcardUI();
+    } else {
+      console.warn('[SumVid] SumVidFlashcardMaker module not loaded');
+    }
+  }
+  
+  // Flashcard UI initialization
+  async function initializeFlashcardUI() {
+    const generateFlashcardButton = document.getElementById('generate-flashcard-button');
+    
+    if (!flashcardContainer || !generateFlashcardButton) {
+      console.warn('[SumVid] Flashcard UI elements not found');
+      return;
+    }
+    
+    // Generate flashcard button handler
+    generateFlashcardButton.addEventListener('click', async () => {
+      await handleGenerateFlashcards();
+    });
+    
+    // Initial render
+    await renderFlashcards();
+  }
+  
+  async function handleGenerateFlashcards() {
+    const generateButton = document.getElementById('generate-flashcard-button');
+    if (!generateButton || !window.SumVidFlashcardMaker) return;
+    
+    // Get current content info
+    const stored = await chrome.storage.local.get(['currentContentInfo', 'currentVideoInfo']);
+    const contentInfo = stored.currentContentInfo || stored.currentVideoInfo;
+    
+    if (!contentInfo) {
+      alert('No content available to generate flashcards from.');
+      return;
+    }
+    
+    const contentType = contentInfo.type || 'video';
+    const contentText = contentType === 'video' 
+      ? (contentInfo.transcript || '')
+      : (contentInfo.text || '');
+    
+    if (!contentText || contentText.length < 50) {
+      alert('Content is too short to generate flashcards. Please ensure you have a summary or transcript available.');
+      return;
+    }
+    
+    // Check usage limit
+    if (window.UsageTracker) {
+      const limitReached = await window.UsageTracker.isLimitReached();
+      if (limitReached) {
+        alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+        return;
+      }
+    }
+    
+    generateButton.disabled = true;
+    generateButton.textContent = 'Generating...';
+    
+    if (flashcardContent) {
+      flashcardContent.style.display = 'block';
+      flashcardContent.textContent = 'Generating flashcards...';
+    }
+    flashcardContainer?.classList.remove('hidden');
+    
+    try {
+      // Increment usage
+      if (window.UsageTracker) {
+        const result = await window.UsageTracker.incrementUsage();
+        if (!result.success) {
+          alert(result.error || 'Daily limit reached.');
+          generateButton.disabled = false;
+          generateButton.textContent = 'Generate Flashcards';
+          return;
+        }
+      }
+      
+      // Generate flashcards
+      const response = await chrome.runtime.sendMessage({
+        action: 'generate-flashcards',
+        contentType: contentType,
+        transcript: contentType === 'video' ? contentText : undefined,
+        text: contentType !== 'video' ? contentText : undefined,
+        title: contentInfo.title || (contentType === 'video' ? 'unknown video' : contentType === 'pdf' ? 'unknown document' : 'unknown page')
+      });
+      
+      if (response?.error) {
+        alert(response.error);
+        if (flashcardContent) {
+          flashcardContent.textContent = `Failed to generate flashcards: ${response.error}`;
+        }
+      } else if (response?.success && response?.flashcards) {
+        // Create flashcard set
+        const setTitle = `${contentInfo.title || 'Untitled'} - Flashcards`;
+        await window.SumVidFlashcardMaker.createFlashcardSet(setTitle, response.flashcards);
+        await renderFlashcards();
+      }
+      
+      await updateStatusCards();
+    } catch (error) {
+      console.error('[SumVid] Flashcard generation error:', error);
+      alert('Failed to generate flashcards. Please try again.');
+      if (flashcardContent) {
+        flashcardContent.textContent = 'Failed to generate flashcards.';
+      }
+    } finally {
+      generateButton.disabled = false;
+      generateButton.textContent = 'Generate Flashcards';
+    }
+  }
+  
+  async function renderFlashcards() {
+    if (!window.SumVidFlashcardMaker || !flashcardList || !flashcardEmpty) return;
+    
+    await window.SumVidFlashcardMaker.loadFlashcards();
+    const sets = window.SumVidFlashcardMaker.getAllFlashcards();
+    
+    // Get current content to filter relevant flashcards
+    const stored = await chrome.storage.local.get(['currentContentInfo', 'currentVideoInfo']);
+    const contentInfo = stored.currentContentInfo || stored.currentVideoInfo;
+    const currentTitle = contentInfo?.title || '';
+    
+    // Filter flashcards for current content (simple title matching)
+    const relevantSets = currentTitle 
+      ? sets.filter(set => set.title.includes(currentTitle))
+      : sets.slice(-1); // Show most recent if no content
+    
+    if (relevantSets.length === 0) {
+      flashcardList.innerHTML = '';
+      flashcardEmpty.classList.remove('hidden');
+    } else {
+      flashcardEmpty.classList.add('hidden');
+      flashcardList.innerHTML = '';
+      
+      // Show the most relevant set (or most recent)
+      const setToShow = relevantSets[0];
+      
+      setToShow.cards.forEach((card, index) => {
+        const cardElement = createFlashcardElement(card, index, setToShow.id);
+        flashcardList.appendChild(cardElement);
+      });
+    }
+  }
+  
+  function createFlashcardElement(card, index, setId) {
+    const div = document.createElement('div');
+    div.className = 'flashcard-item';
+    div.dataset.index = index;
+    div.dataset.setId = setId;
+    
+    const front = document.createElement('div');
+    front.className = 'flashcard-item__front';
+    const frontText = document.createElement('div');
+    frontText.className = 'flashcard-item__text';
+    frontText.textContent = card.question || card.front || 'Question';
+    front.appendChild(frontText);
+    
+    const back = document.createElement('div');
+    back.className = 'flashcard-item__back';
+    const backText = document.createElement('div');
+    backText.className = 'flashcard-item__text';
+    backText.textContent = card.answer || card.back || 'Answer';
+    back.appendChild(backText);
+    
+    const actions = document.createElement('div');
+    actions.className = 'flashcard-item__actions';
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'flashcard-item__action';
+    deleteBtn.textContent = '×';
+    deleteBtn.title = 'Delete flashcard';
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (confirm('Delete this flashcard?')) {
+        // Remove card from set
+        const set = window.SumVidFlashcardMaker.getFlashcardSetById(setId);
+        if (set) {
+          set.cards.splice(index, 1);
+          if (set.cards.length === 0) {
+            await window.SumVidFlashcardMaker.deleteFlashcardSet(setId);
+          } else {
+            await window.SumVidFlashcardMaker.loadFlashcards(); // Refresh
+            const updatedSet = window.SumVidFlashcardMaker.getFlashcardSetById(setId);
+            if (updatedSet) {
+              updatedSet.cards = set.cards;
+              updatedSet.updatedAt = Date.now();
+              await chrome.storage.local.set({ sumvid_flashcards: window.SumVidFlashcardMaker.getAllFlashcards() });
+            }
+          }
+          await renderFlashcards();
+        }
+      }
+    });
+    actions.appendChild(deleteBtn);
+    
+    div.appendChild(front);
+    div.appendChild(back);
+    div.appendChild(actions);
+    
+    // Flip on click
+    div.addEventListener('click', (e) => {
+      if (e.target === deleteBtn || deleteBtn.contains(e.target)) return;
+      div.classList.toggle('flipped');
+    });
+    
+    return div;
+  }
+  
+  // Notes UI initialization
+  async function initializeNotesUI() {
+    const notesContainer = document.getElementById('notes-container');
+    const notesList = document.getElementById('notes-list');
+    const noteEmpty = document.getElementById('note-empty');
+    const createNoteButton = document.getElementById('create-note-button');
+    const notesFilter = document.getElementById('notes-filter');
+    const noteEditorDialog = document.getElementById('note-editor-dialog');
+    const noteEditorForm = document.getElementById('note-editor-form');
+    const noteTitleInput = document.getElementById('note-title');
+    const noteFolderInput = document.getElementById('note-folder');
+    const noteContentInput = document.getElementById('note-content');
+    
+    if (!notesContainer || !notesList || !createNoteButton) {
+      console.warn('[SumVid] Notes UI elements not found');
+      return;
+    }
+    
+    // Render notes
+    async function renderNotes(folder = 'all') {
+      if (!window.SumVidNotesManager) return;
+      
+      await window.SumVidNotesManager.loadNotes();
+      let notesToShow = folder === 'all' 
+        ? window.SumVidNotesManager.getAllNotes()
+        : window.SumVidNotesManager.getNotesByFolder(folder);
+      
+      // Sort by updatedAt (newest first)
+      notesToShow.sort((a, b) => (b.updatedAt || b.timestamp) - (a.updatedAt || a.timestamp));
+      
+      if (notesToShow.length === 0) {
+        notesList.innerHTML = '';
+        if (noteEmpty) noteEmpty.classList.remove('hidden');
+      } else {
+        if (noteEmpty) noteEmpty.classList.add('hidden');
+        notesList.innerHTML = '';
+        
+        notesToShow.forEach(note => {
+          const noteElement = createNoteElement(note);
+          notesList.appendChild(noteElement);
+        });
+      }
+      
+      // Update folder filter options
+      if (notesFilter) {
+        const folders = window.SumVidNotesManager.getFolders();
+        const currentValue = notesFilter.value;
+        notesFilter.innerHTML = '<option value="all">All Notes</option>';
+        folders.forEach(folder => {
+          const option = document.createElement('option');
+          option.value = folder;
+          option.textContent = folder;
+          notesFilter.appendChild(option);
+        });
+        notesFilter.value = currentValue;
+      }
+    }
+    
+    function createNoteElement(note) {
+      const div = document.createElement('div');
+      div.className = 'note-item';
+      div.dataset.noteId = note.id;
+      
+      const updatedAt = new Date(note.updatedAt || note.timestamp);
+      const timeStr = updatedAt.toLocaleDateString() + ' ' + updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      div.innerHTML = `
+        <div class="note-item__header">
+          <h4 class="note-item__title">${escapeHtml(note.title)}</h4>
+          <span class="note-item__folder">${escapeHtml(note.folder || 'Uncategorized')}</span>
+        </div>
+        <div class="note-item__content">${escapeHtml(note.content)}</div>
+        <div class="note-item__footer">
+          <span class="note-item__timestamp">${timeStr}</span>
+          <div class="note-item__actions">
+            <button class="note-item__button note-item__button--flashcard" data-action="flashcard" data-note-id="${note.id}">Flashcard</button>
+            <button class="note-item__button note-item__button--edit" data-action="edit" data-note-id="${note.id}">Edit</button>
+            <button class="note-item__button note-item__button--delete" data-action="delete" data-note-id="${note.id}">Delete</button>
+          </div>
+        </div>
+      `;
+      
+      // Add event listeners
+      const flashcardBtn = div.querySelector('[data-action="flashcard"]');
+      const editBtn = div.querySelector('[data-action="edit"]');
+      const deleteBtn = div.querySelector('[data-action="delete"]');
+      
+      if (flashcardBtn) {
+        flashcardBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await handleGenerateFlashcard(note.id);
+        });
+      }
+      
+      if (editBtn) {
+        editBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await handleEditNote(note.id);
+        });
+      }
+      
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (confirm('Delete this note?')) {
+            await handleDeleteNote(note.id);
+          }
+        });
+      }
+      
+      return div;
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    async function handleGenerateFlashcard(noteId) {
+      if (!window.SumVidNotesManager || !window.SumVidFlashcardMaker) return;
+      const note = window.SumVidNotesManager.getNoteById(noteId);
+      if (!note || !note.content) return;
+      
+      // Check usage limit
+      if (window.UsageTracker) {
+        const limitReached = await window.UsageTracker.isLimitReached();
+        if (limitReached) {
+          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+          return;
+        }
+      }
+      
+      try {
+        // Increment usage
+        if (window.UsageTracker) {
+          const result = await window.UsageTracker.incrementUsage();
+          if (!result.success) {
+            alert(result.error || 'Daily limit reached.');
+            return;
+          }
+        }
+        
+        // Generate flashcards from note content
+        const response = await chrome.runtime.sendMessage({
+          action: 'generate-flashcards',
+          contentType: 'webpage', // Treat notes as webpage content
+          text: note.content,
+          title: note.title || 'Untitled Note'
+        });
+        
+        if (response?.error) {
+          alert(response.error);
+        } else if (response?.success && response?.flashcards) {
+          // Create flashcard set
+          const setTitle = `${note.title || 'Untitled Note'} - Flashcards`;
+          await window.SumVidFlashcardMaker.createFlashcardSet(setTitle, response.flashcards);
+          await renderFlashcards();
+          alert('Flashcards generated successfully!');
+        }
+        
+        await updateStatusCards();
+      } catch (error) {
+        console.error('[SumVid] Error generating flashcards from note:', error);
+        alert('Failed to generate flashcards. Please try again.');
+      }
+    }
+    
+    async function handleEditNote(noteId) {
+      if (!window.SumVidNotesManager || !noteEditorDialog) return;
+      const note = window.SumVidNotesManager.getNoteById(noteId);
+      if (!note) return;
+      
+      document.getElementById('note-editor-title').textContent = 'Edit Note';
+      noteTitleInput.value = note.title;
+      noteFolderInput.value = note.folder || 'Uncategorized';
+      noteContentInput.value = note.content;
+      noteEditorForm.dataset.noteId = noteId;
+      
+      noteEditorDialog.showModal();
+    }
+    
+    async function handleDeleteNote(noteId) {
+      if (!window.SumVidNotesManager) return;
+      await window.SumVidNotesManager.deleteNote(noteId);
+      await renderNotes(notesFilter?.value || 'all');
+    }
+    
+    // Create note button handler
+    createNoteButton.addEventListener('click', () => {
+      if (!noteEditorDialog) return;
+      document.getElementById('note-editor-title').textContent = 'New Note';
+      noteTitleInput.value = '';
+      noteFolderInput.value = 'Uncategorized';
+      noteContentInput.value = '';
+      delete noteEditorForm.dataset.noteId;
+      noteEditorDialog.showModal();
+    });
+    
+    // Filter change handler
+    if (notesFilter) {
+      notesFilter.addEventListener('change', () => {
+        renderNotes(notesFilter.value);
+      });
+    }
+    
+    // Note editor form handler
+    if (noteEditorForm) {
+      noteEditorForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!window.SumVidNotesManager) return;
+        
+        const title = noteTitleInput.value.trim();
+        const folder = noteFolderInput.value.trim() || 'Uncategorized';
+        const content = noteContentInput.value.trim();
+        
+        if (!title || !content) {
+          alert('Title and content are required');
+          return;
+        }
+        
+        const noteId = noteEditorForm.dataset.noteId;
+        if (noteId) {
+          // Update existing note
+          await window.SumVidNotesManager.updateNote(noteId, { title, folder, content });
+        } else {
+          // Create new note
+          await window.SumVidNotesManager.createNote(title, content, folder);
+        }
+        
+        noteEditorDialog.close();
+        await renderNotes(notesFilter?.value || 'all');
+      });
+    }
+    
+    // Close dialog handlers
+    const cancelButtons = document.querySelectorAll('.note-editor__cancel');
+    cancelButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (noteEditorDialog) noteEditorDialog.close();
+      });
+    });
+    
+    // Initial render
+    await renderNotes();
   }
   
   // Try immediately, then retry if needed
@@ -1322,43 +1757,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(ensureEventListeners, 100);
   }
   
-  // Modify displayVideoInfo to include duration
-  async function displayVideoInfo(videoInfo) {
-    if (!videoInfo) {
-      showState(noVideoState);
+  // Display content info (works for video, webpage, PDF)
+  async function displayVideoInfo(contentInfo) {
+    if (!contentInfo) {
+      // No content info, but don't show error state - show interface anyway
+      showState(videoInfoState);
       return;
     }
     
-    currentVideoInfo = videoInfo;
+    currentVideoInfo = contentInfo;
     userContext = { ...DEFAULT_CONTEXT };
+    
     if (videoTitle) {
-      videoTitle.textContent = videoInfo.title || 'Unknown Title';
+      videoTitle.textContent = contentInfo.title || 'Untitled Content';
     }
     if (channelName) {
-      channelName.textContent = videoInfo.channel || 'Unknown Channel';
+      // Show channel for videos, URL/source for webpages/PDFs
+      channelName.textContent = contentInfo.channel || contentInfo.url || 'Unknown Source';
     }
     
-    // Update video duration in info center
-    if (videoInfo.duration) {
-      updateInfoCenter(videoInfo.duration, '');
+    // Update duration in info center (only for videos)
+    if (contentInfo.duration) {
+      updateInfoCenter(contentInfo.duration, '');
     }
     
     summaryContainer?.classList.add('hidden');
     questionsContainer?.classList.add('hidden');
     quizContainer?.classList.add('hidden');
     
-    // Show status section when video info is displayed
+    // Show status section when content info is displayed
     const statusSection = document.getElementById('status-section');
     if (statusSection) {
       statusSection.style.display = 'flex';
     }
     
-    // Don't auto-generate - wait for user to click "Summarize" or "Make Test" buttons
-    // Show containers but keep content hidden until manually generated
-    if (videoInfo.transcript) {
+    // Show containers if we have content (transcript for video, text for webpage/PDF)
+    const hasContent = contentInfo.transcript || contentInfo.text || contentInfo.needsServerExtraction;
+    if (hasContent) {
       summaryContainer?.classList.remove('hidden');
       quizContainer?.classList.remove('hidden');
-      // But keep content hidden
+      questionsContainer?.classList.remove('hidden');
+      // But keep content hidden until manually generated
       if (summaryContent) summaryContent.style.display = 'none';
       if (quizContent) quizContent.style.display = 'none';
     }
@@ -1368,39 +1807,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(ensureEventListeners, 100);
   }
   
-  // Listen for video info updates
+  // Listen for content info updates
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace !== 'local') return;
 
-    // Handle background-generated content
-    if (currentVideoInfo?.url) {
-      const videoId = getVideoId(currentVideoInfo.url);
-      const summaryKey = `summary_${videoId}`;
-      const quizKey = `quiz_${videoId}`;
-
-      if (changes[summaryKey] || changes[quizKey]) {
-        console.log('Detected summary/quiz update for current video. Re-initializing UI.');
-        // Use a small delay to prevent race conditions with storage
-        setTimeout(initializeExtension, 100);
-        return; // Stop further processing for this event
-      }
-    }
-    
-    // Handle video info updates from content script
-    if (changes.currentVideoInfo?.newValue) {
+    // Handle content info updates from content script
+    if (changes.currentContentInfo?.newValue) {
+      const newContentInfo = changes.currentContentInfo.newValue;
+      displayVideoInfo(newContentInfo);
+    } else if (changes.currentVideoInfo?.newValue) {
+      // Legacy support for currentVideoInfo
       const newVideoInfo = changes.currentVideoInfo.newValue;
-      
-      // Check if we got a transcript for an existing session that needs quiz generation
-      if (newVideoInfo.transcript && currentVideoInfo && 
-          currentVideoInfo.url === newVideoInfo.url && 
-          !currentVideoInfo.transcript) {
-        
-        currentVideoInfo = newVideoInfo;
-        
-        // Don't auto-generate - user must click buttons manually
-      } else {
-        displayVideoInfo(newVideoInfo);
-      }
+      displayVideoInfo(newVideoInfo);
     }
   });
   

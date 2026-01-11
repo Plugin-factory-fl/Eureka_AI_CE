@@ -253,6 +253,19 @@ input:checked + .slider:before {
 }
 
 .summary-container,
+.flashcard-container {
+  margin-top: 8px;
+  margin-bottom: 8px;
+  text-align: left;
+  background-color: var(--bg-primary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  padding: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+}
+
 .quiz-container {
   margin-top: 8px;
   margin-bottom: 8px;

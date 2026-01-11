@@ -162,199 +162,310 @@ async function sendMessageWithTimeout(message) {
 let isProcessing = false;
 let messageQueue = [];
 
-const SIDEBAR_CONTAINER_ID = 'sumvid-learn-sidebar-container';
-const SIDEBAR_ID = 'sumvid-learn-sidebar';
-const SIDEBAR_VISIBLE_CLASS = 'sumvid-sidebar-visible';
-
-function ensureSidebarStyles() {
-  if (document.getElementById(`${SIDEBAR_CONTAINER_ID}-style`)) {
-    return;
-  }
-
-  const style = document.createElement('style');
-  style.id = `${SIDEBAR_CONTAINER_ID}-style`;
-  style.textContent = `
-    #${SIDEBAR_CONTAINER_ID} {
-      position: fixed;
-      top: 0;
-      right: 0;
-      height: 100vh;
-      width: min(546px, 94vw);
-      transform: translateX(100%);
-      transition: transform 160ms ease-in-out;
-      z-index: 2147483647;
-      box-shadow: -12px 0 32px rgba(17, 24, 39, 0.24);
-      display: flex;
-      flex-direction: column;
-      background: transparent;
-      pointer-events: none;
+// Inline content detection functions (since content scripts can't easily use ES6 imports)
+function detectContentType() {
+  try {
+    const url = window.location.href;
+    
+    // Check for PDF (Chrome PDF viewer)
+    const pdfEmbed = document.body.querySelector('embed[type="application/pdf"]');
+    if (pdfEmbed && pdfEmbed.getAttribute('width') === '100%' && 
+        pdfEmbed.getAttribute('height') === '100%' && 
+        pdfEmbed.getAttribute('internalid')) {
+      return {
+        type: 'pdf',
+        title: document.title || url,
+        url: url,
+        canSummarize: true,
+        pdfUrl: url
+      };
     }
-
-    #${SIDEBAR_CONTAINER_ID}.${SIDEBAR_VISIBLE_CLASS} {
-      transform: translateX(0);
-      pointer-events: auto;
+    
+    // Check for YouTube video
+    if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
+      return {
+        type: 'video',
+        platform: 'youtube',
+        url: url,
+        canSummarize: true
+      };
     }
-
-    #${SIDEBAR_CONTAINER_ID} #${SIDEBAR_ID} {
-      border: none;
-      width: 100%;
-      height: 100%;
-      background: #f5f7fb;
-    }
-
-    #${SIDEBAR_CONTAINER_ID} .sumvid-close {
-      position: absolute;
-      top: 12px;
-      left: -52px;
-      width: 40px;
-      height: 40px;
-      border-radius: 20px 0 0 20px;
-      border: none;
-      background: #1f2a44;
-      color: #ffffff;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: -8px 0 14px rgba(17, 24, 39, 0.35);
-      padding: 0;
-      font-size: 18px;
-      font-weight: bold;
-      visibility: hidden;
-      pointer-events: none;
-      transition: visibility 0s linear 160ms, opacity 160ms ease;
-      opacity: 0;
-    }
-
-    #${SIDEBAR_CONTAINER_ID} .sumvid-close:hover {
-      background: #162036;
-    }
-
-    #${SIDEBAR_CONTAINER_ID}.${SIDEBAR_VISIBLE_CLASS} .sumvid-close {
-      visibility: visible;
-      pointer-events: auto;
-      transition-delay: 0s;
-      opacity: 1;
-    }
-  `;
-
-  document.head.appendChild(style);
-}
-
-function createSidebarContainer() {
-  ensureSidebarStyles();
-
-  let container = document.getElementById(SIDEBAR_CONTAINER_ID);
-  if (container) {
-    return container;
-  }
-
-  container = document.createElement('div');
-  container.id = SIDEBAR_CONTAINER_ID;
-
-  const closeButton = document.createElement('button');
-  closeButton.className = 'sumvid-close';
-  closeButton.type = 'button';
-  closeButton.textContent = '×';
-  closeButton.title = 'Close SumVid Learn';
-  closeButton.addEventListener('click', () => {
-    closeSidebar(container);
-  });
-
-  const sidebar = document.createElement('iframe');
-  sidebar.id = SIDEBAR_ID;
-  sidebar.src = chrome.runtime.getURL('sidebar.html');
-  sidebar.setAttribute('allow', 'clipboard-write');
-
-  container.appendChild(closeButton);
-  container.appendChild(sidebar);
-  document.documentElement.appendChild(container);
-  return container;
-}
-
-function toggleSidebar() {
-  const container = createSidebarContainer();
-  const willShow = !container.classList.contains(SIDEBAR_VISIBLE_CLASS);
-  container.classList.toggle(SIDEBAR_VISIBLE_CLASS, willShow);
-}
-
-function closeSidebar(container) {
-  if (!container) {
-    container = document.getElementById(SIDEBAR_CONTAINER_ID);
-  }
-  if (container) {
-    container.classList.remove(SIDEBAR_VISIBLE_CLASS);
+    
+    // Default to webpage
+    return {
+      type: 'webpage',
+      title: document.title || url,
+      url: url,
+      canSummarize: true
+    };
+  } catch (error) {
+    console.error('[SumVid] Error detecting content type:', error);
+    return null;
   }
 }
 
-function injectSidebar() {
-  // Sidebar is now created via createSidebarContainer when needed
-  // Just ensure styles are loaded
-  ensureSidebarStyles();
+function extractWebpageText() {
+  try {
+    // Remove script and style elements
+    const scripts = document.querySelectorAll('script, style, noscript, iframe');
+    scripts.forEach(el => el.remove());
+    
+    // Get main content areas (prioritize article, main, content areas)
+    let content = '';
+    const article = document.querySelector('article');
+    const main = document.querySelector('main');
+    const contentArea = document.querySelector('[role="main"], .content, .post-content, .entry-content');
+    
+    if (article) {
+      content = article.innerText || article.textContent || '';
+    } else if (main) {
+      content = main.innerText || main.textContent || '';
+    } else if (contentArea) {
+      content = contentArea.innerText || contentArea.textContent || '';
+    } else {
+      // Fallback to body
+      const bodyClone = document.body.cloneNode(true);
+      bodyClone.querySelectorAll('script, style, noscript, iframe, nav, header, footer, aside').forEach(el => el.remove());
+      content = bodyClone.innerText || bodyClone.textContent || '';
+    }
+    
+    // Clean up text
+    content = content
+      .replace(/\s+/g, ' ')
+      .replace(/\n\s*\n/g, '\n')
+      .trim();
+    
+    return content;
+  } catch (error) {
+    console.error('[SumVid] Error extracting webpage text:', error);
+    return '';
+  }
 }
 
-// Function to send video info to background script
-async function sendVideoInfo() {
+function getWebpageMetadata() {
+  const metaDescription = document.querySelector('meta[name="description"]')?.content || '';
+  const metaTitle = document.querySelector('meta[property="og:title"]')?.content || 
+                    document.querySelector('meta[name="twitter:title"]')?.content ||
+                    document.title ||
+                    window.location.href;
+  
+  return {
+    title: metaTitle,
+    description: metaDescription,
+    url: window.location.href
+  };
+}
+
+function isChromePDFViewer() {
+  try {
+    const pdfEmbed = document.body.querySelector('embed[type="application/pdf"]');
+    return !!(
+      pdfEmbed &&
+      pdfEmbed.getAttribute('width') === '100%' &&
+      pdfEmbed.getAttribute('height') === '100%' &&
+      pdfEmbed.getAttribute('internalid')
+    );
+  } catch (error) {
+    return false;
+  }
+}
+
+function isPDFjs() {
+  try {
+    return !!(
+      window.PDFViewerApplication ||
+      document.querySelector('.textLayer') ||
+      document.querySelector('#viewer') ||
+      window.location.href.includes('pdfjs')
+    );
+  } catch (error) {
+    return false;
+  }
+}
+
+async function extractChromePDFViewer() {
+  try {
+    const url = window.location.href;
+    return {
+      type: 'pdf',
+      title: document.title || url,
+      url: url,
+      pdfUrl: url,
+      canSummarize: true,
+      needsServerExtraction: true
+    };
+  } catch (error) {
+    console.error('[SumVid] Error extracting Chrome PDF viewer:', error);
+    throw error;
+  }
+}
+
+async function extractPDFjsText() {
+  try {
+    if (!isPDFjs()) {
+      throw new Error('PDF.js not detected on page');
+    }
+    
+    let text = '';
+    
+    // Try to get text from textLayer elements (PDF.js renders text there)
+    const textLayers = document.querySelectorAll('.textLayer');
+    if (textLayers.length > 0) {
+      textLayers.forEach(layer => {
+        const layerText = layer.innerText || layer.textContent || '';
+        text += layerText + '\n';
+      });
+    } else {
+      // Fallback: try to get text from the viewer container
+      const viewer = document.querySelector('#viewer') || document.querySelector('.pdfViewer');
+      if (viewer) {
+        text = viewer.innerText || viewer.textContent || '';
+      } else {
+        // Last resort: get all visible text
+        const bodyClone = document.body.cloneNode(true);
+        bodyClone.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+        text = bodyClone.innerText || bodyClone.textContent || '';
+      }
+    }
+    
+    // Clean up text
+    text = text
+      .replace(/\s+/g, ' ')
+      .replace(/\n\s*\n/g, '\n')
+      .trim();
+    
+    return text;
+  } catch (error) {
+    console.error('[SumVid] Error extracting PDF.js text:', error);
+    throw error;
+  }
+}
+
+function getPDFUrl() {
+  try {
+    const pdfEmbed = document.body.querySelector('embed[type="application/pdf"]');
+    if (pdfEmbed && pdfEmbed.src) {
+      return pdfEmbed.src;
+    }
+    return window.location.href;
+  } catch (error) {
+    return window.location.href;
+  }
+}
+
+// Function to send content info to background script (universal: video, webpage, PDF)
+async function sendContentInfo() {
   if (isProcessing) {
-    console.log('Already processing video info, queuing...');
-    messageQueue.push({ type: 'send_video_info' });
+    console.log('[SumVid] Already processing content info, queuing...');
+    messageQueue.push({ type: 'send_content_info' });
     return;
   }
 
   try {
     isProcessing = true;
-    console.log('Attempting to send FULL video info...');
-    const titleElement = await waitForElement('h1.style-scope.ytd-watch-metadata', 5000, 3);
-    
-    if (!titleElement) {
-      throw new Error('Failed to find video title element after retries');
-    }
-    
-    const videoInfo = extractVideoInfo();
-    if (!videoInfo) {
-      throw new Error('Failed to extract basic video info');
+    console.log('[SumVid] Detecting content type...');
+
+    const contentType = detectContentType();
+    if (!contentType) {
+      throw new Error('Failed to detect content type');
     }
 
-    console.log('Basic video info extracted, now getting transcript...');
-    const transcriptData = await extractTranscript();
+    console.log('[SumVid] Content type detected:', contentType.type);
 
-    const data = {
-      ...videoInfo,
-      ...transcriptData
+    let contentData = {
+      ...contentType,
+      timestamp: new Date().toISOString()
     };
 
-    console.log('Full video info extracted, sending to background script.');
+    // Extract content based on type
+    if (contentType.type === 'video') {
+      // YouTube video - use existing extraction
+      const titleElement = await waitForElement('h1.style-scope.ytd-watch-metadata', 5000, 3);
+      if (!titleElement) {
+        throw new Error('Failed to find video title element after retries');
+      }
+
+      const videoInfo = extractVideoInfo();
+      if (!videoInfo) {
+        throw new Error('Failed to extract basic video info');
+      }
+
+      console.log('[SumVid] Basic video info extracted, now getting transcript...');
+      const transcriptData = await extractTranscript();
+
+      contentData = {
+        ...contentData,
+        ...videoInfo,
+        ...transcriptData
+      };
+    } else if (contentType.type === 'pdf') {
+      // PDF content
+      if (isChromePDFViewer()) {
+        console.log('[SumVid] Detected Chrome PDF viewer');
+        const pdfInfo = await extractChromePDFViewer();
+        contentData = { ...contentData, ...pdfInfo };
+        // Chrome PDF viewer needs server-side extraction
+        contentData.needsServerExtraction = true;
+      } else if (isPDFjs()) {
+        console.log('[SumVid] Detected PDF.js viewer');
+        const pdfText = await extractPDFjsText();
+        contentData.text = pdfText;
+        contentData.pdfUrl = getPDFUrl();
+      } else {
+        throw new Error('PDF detected but extraction method not available');
+      }
+    } else if (contentType.type === 'webpage') {
+      // Webpage content
+      console.log('[SumVid] Extracting webpage text...');
+      const webpageText = extractWebpageText();
+      const metadata = getWebpageMetadata();
+      
+      contentData = {
+        ...contentData,
+        text: webpageText,
+        ...metadata
+      };
+    }
+
+    console.log('[SumVid] Content extracted, sending to background script.');
     
     const response = await sendMessageWithTimeout({
-      type: 'VIDEO_INFO',
-      data
+      type: 'CONTENT_INFO',
+      data: contentData
     });
 
     if (response?.error) {
-      console.warn('Warning sending video info:', response.error);
+      console.warn('[SumVid] Warning sending content info:', response.error);
     } else {
-      console.log('Video info sent successfully');
+      console.log('[SumVid] Content info sent successfully');
     }
   } catch (error) {
-    console.error('Error in sendVideoInfo:', error.message || error);
+    console.error('[SumVid] Error in sendContentInfo:', error.message || error);
   } finally {
     isProcessing = false;
     processNextMessage();
   }
 }
 
+// Legacy function name for backward compatibility
+async function sendVideoInfo() {
+  return sendContentInfo();
+}
+
 function processNextMessage() {
   if (messageQueue.length > 0 && !isProcessing) {
     const nextMessage = messageQueue.shift();
-    if (nextMessage.type === 'send_video_info') {
-      sendVideoInfo();
+    if (nextMessage.type === 'send_video_info' || nextMessage.type === 'send_content_info') {
+      sendContentInfo();
     }
   }
 }
 
-// Initialize content script
-console.log('Content script initialized');
-sendVideoInfo();
+// Initialize content script - send content info for all pages
+console.log('[SumVid] Content script initialized');
+
+// Send content info for current page
+sendContentInfo();
 
 // Handle URL changes
 let lastUrl = location.href;
@@ -362,43 +473,55 @@ const observer = new MutationObserver(() => {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
-    if (url.includes('youtube.com/watch')) {
-      console.log('URL changed to a video page, updating info...');
-      setTimeout(sendVideoInfo, 2000);
-    }
+    console.log('[SumVid] URL changed, updating content info...');
+    setTimeout(sendContentInfo, 2000);
   }
 });
 
 observer.observe(document, { subtree: true, childList: true });
 
-// Listen for messages from popup
+// Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'TOGGLE_SIDEBAR') {
-    toggleSidebar();
-    sendResponse({ success: true });
-    return;
-  }
-
-  if (message.type === 'REQUEST_VIDEO_INFO') {
+  if (message.type === 'REQUEST_VIDEO_INFO' || message.type === 'REQUEST_CONTENT_INFO') {
     (async () => {
       if (isProcessing) {
-        messageQueue.push({ type: 'send_video_info' });
-        sendResponse({ success: false, error: 'Already processing video info, queued request' });
+        messageQueue.push({ type: 'send_content_info' });
+        sendResponse({ success: false, error: 'Already processing content info, queued request' });
         return;
       }
 
       try {
         isProcessing = true;
-        const transcriptData = await extractTranscript();
-        const videoInfo = extractVideoInfo();
-        const data = {
-          ...videoInfo,
-          ...transcriptData
-        };
+        
+        const contentType = detectContentType();
+        if (!contentType) {
+          throw new Error('Failed to detect content type');
+        }
+
+        let contentData = { ...contentType };
+
+        if (contentType.type === 'video') {
+          const transcriptData = await extractTranscript();
+          const videoInfo = extractVideoInfo();
+          contentData = { ...contentData, ...videoInfo, ...transcriptData };
+        } else if (contentType.type === 'pdf') {
+          if (isChromePDFViewer()) {
+            const pdfInfo = await extractChromePDFViewer();
+            contentData = { ...contentData, ...pdfInfo };
+          } else if (isPDFjs()) {
+            const pdfText = await extractPDFjsText();
+            contentData.text = pdfText;
+            contentData.pdfUrl = getPDFUrl();
+          }
+        } else if (contentType.type === 'webpage') {
+          const webpageText = extractWebpageText();
+          const metadata = getWebpageMetadata();
+          contentData = { ...contentData, text: webpageText, ...metadata };
+        }
         
         const response = await sendMessageWithTimeout({
-          type: 'VIDEO_INFO',
-          data
+          type: 'CONTENT_INFO',
+          data: contentData
         });
 
         if (response?.error) {
@@ -415,14 +538,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   } else if (message.type === 'GET_BASIC_VIDEO_INFO') {
-    // Get basic video info without extracting transcript
+    // Get basic video info without extracting transcript (legacy support)
     (async () => {
       try {
-        const videoInfo = extractVideoInfo();
-        if (videoInfo) {
-          sendResponse({ success: true, ...videoInfo });
+        if (window.location.href.includes('youtube.com/watch')) {
+          const videoInfo = extractVideoInfo();
+          if (videoInfo) {
+            sendResponse({ success: true, ...videoInfo });
+          } else {
+            sendResponse({ success: false, error: 'Could not extract video info' });
+          }
         } else {
-          sendResponse({ success: false, error: 'Could not extract video info' });
+          sendResponse({ success: false, error: 'Not a YouTube video page' });
         }
       } catch (error) {
         sendResponse({ success: false, error: error.message });
@@ -432,75 +559,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   return false;
 });
-
-// Listen for messages from sidebar iframe
-window.addEventListener('message', async (event) => {
-  if (event.data && event.data.type === 'SIDEBAR_MESSAGE') {
-    try {
-      const response = await sendMessageWithTimeout(event.data.message);
-      
-      // Send response back to sidebar
-      event.source.postMessage({
-        type: 'SIDEBAR_RESPONSE',
-        response: response
-      }, '*');
-    } catch (error) {
-      // Send error response back to sidebar
-      event.source.postMessage({
-        type: 'SIDEBAR_RESPONSE',
-        response: { error: error.message }
-      }, '*');
-    }
-  } else if (event.data && event.data.type === 'GET_CURRENT_URL') {
-    // Send current URL back to sidebar
-    event.source.postMessage({
-      type: 'CURRENT_URL_RESPONSE',
-      url: window.location.href
-    }, '*');
-  }
-});
-
-// Initialize sticky button and sidebar
-function initializeExtension() {
-  const url = window.location.href;
-  if (url.includes('youtube.com/watch')) {
-    console.log('[SumVid] Initializing extension on YouTube video page');
-    // Inject sidebar container (will be shown/hidden via toggle)
-    injectSidebar();
-
-    // Load and initialize sticky button
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('Source/StickyButton.js');
-    script.onload = () => {
-      console.log('[SumVid] StickyButton.js loaded');
-      // Small delay to ensure IIFE has executed
-      setTimeout(() => {
-        if (window.SumVidStickyButton) {
-          // Make toggleSidebar available globally for sticky button
-          window.toggleSidebar = toggleSidebar;
-          // Initialize sticky button
-          console.log('[SumVid] Initializing sticky button');
-          window.SumVidStickyButton.init({ position: 'bottom-right', offsetX: 250, offsetY: 250 });
-        } else {
-          console.error('[SumVid] SumVidStickyButton not found on window after load');
-          console.log('[SumVid] window.SumVidStickyButton:', typeof window.SumVidStickyButton);
-        }
-      }, 10);
-    };
-    script.onerror = () => {
-      console.error('[SumVid] Failed to load StickyButton.js');
-    };
-    document.head.appendChild(script);
-  } else {
-    console.log('[SumVid] Not a YouTube video page, skipping initialization');
-  }
-}
-
-// Initialize sticky button and sidebar when page is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(initializeExtension, 100);
-  });
-} else {
-  setTimeout(initializeExtension, 100);
-}

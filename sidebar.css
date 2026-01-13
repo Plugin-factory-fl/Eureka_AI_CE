@@ -1017,18 +1017,7 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  animation: subtle-pulse 3s ease-in-out infinite;
-}
-
-@keyframes subtle-pulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0);
-  }
-  50% {
-    transform: scale(1.01);
-    box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.15);
-  }
+  /* Animation removed - was causing size transformation */
 }
 
 .chat-messages {
@@ -1112,6 +1101,45 @@ input:checked + .slider:before {
   50% {
     transform: translateY(-10px);
   }
+}
+
+.pdf-upload-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pdf-upload-container .btn--secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.pdf-upload-container .btn--secondary:hover {
+  background: var(--bg-primary);
+  border-color: #A855F7;
+  color: #A855F7;
+}
+
+.pdf-upload-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.pdf-upload-status.loaded {
+  color: #10b981;
 }
 
 .chat-input-container {

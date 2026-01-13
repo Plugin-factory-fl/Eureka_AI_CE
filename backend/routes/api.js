@@ -643,4 +643,79 @@ Return ONLY the JSON array, no additional text.`;
   }
 });
 
+/**
+ * POST /api/extract-pdf
+ * Extract text from uploaded PDF file
+ * Note: Requires multer and pdf-parse packages
+ * Install: npm install multer pdf-parse
+ */
+router.post('/extract-pdf', async (req, res) => {
+  try {
+    // Check if multer is available
+    let multer;
+    try {
+      multer = (await import('multer')).default;
+    } catch (e) {
+      return res.status(500).json({ 
+        error: 'File upload middleware not available. Please install multer: npm install multer' 
+      });
+    }
+
+    // Check if pdf-parse is available
+    let pdfParse;
+    try {
+      pdfParse = (await import('pdf-parse')).default;
+    } catch (e) {
+      return res.status(500).json({ 
+        error: 'PDF parsing library not available. Please install pdf-parse: npm install pdf-parse' 
+      });
+    }
+
+    // Configure multer for memory storage
+    const upload = multer({ 
+      storage: multer.memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+    });
+
+    // Handle file upload and extraction
+    const uploadMiddleware = upload.single('pdf');
+    
+    uploadMiddleware(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({ error: err.message || 'File upload error' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'No PDF file provided' });
+      }
+
+      if (req.file.mimetype !== 'application/pdf') {
+        return res.status(400).json({ error: 'File must be a PDF' });
+      }
+
+      try {
+        // Extract text from PDF
+        const pdfData = await pdfParse(req.file.buffer);
+        const text = pdfData.text || '';
+
+        if (!text.trim()) {
+          return res.status(400).json({ error: 'Could not extract text from PDF. The PDF may be image-based or encrypted.' });
+        }
+
+        res.json({ 
+          text: text,
+          pages: pdfData.numpages || 0,
+          info: pdfData.info || {}
+        });
+      } catch (parseError) {
+        console.error('PDF parsing error:', parseError);
+        res.status(500).json({ error: 'Failed to parse PDF: ' + parseError.message });
+      }
+    });
+  } catch (error) {
+    console.error('PDF extraction error:', error);
+    res.status(500).json({ error: error.message || 'Failed to extract PDF text' });
+  }
+});
+
 export default router;

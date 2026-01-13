@@ -56,6 +56,13 @@
       <section class="panel__section panel__section--chat" id="chat-section">
         <div class="chat-container">
           <div id="chat-messages" class="chat-messages"></div>
+          <div class="pdf-upload-container">
+            <button id="upload-pdf-button" class="btn btn--secondary" type="button">
+              Upload PDF for Context
+            </button>
+            <input type="file" id="pdf-upload-input" accept=".pdf" style="display: none;">
+            <span id="pdf-upload-status" class="pdf-upload-status" style="display: none;"></span>
+          </div>
           <div class="chat-input-container">
             <input type="text" id="question-input" class="question-input" placeholder="Ask a question about the content...">
             <button id="send-question" class="send-question">

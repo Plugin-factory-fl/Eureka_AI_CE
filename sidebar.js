@@ -616,24 +616,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         throw new Error('Chrome runtime not available');
       }
       
+      // Get combined context (webpage/video + uploaded PDF)
+      const combinedContext = await getCombinedContext();
+      
+      // Get chat history
+      const chatHistoryElements = chatMessages?.querySelectorAll('.chat-message.user, .chat-message.assistant');
+      const chatHistory = [];
+      if (chatHistoryElements) {
+        chatHistoryElements.forEach((el, index) => {
+          if (index < chatHistoryElements.length - 1) { // Exclude current message
+            const isUser = el.classList.contains('user');
+            const text = el.textContent.trim();
+            if (text && !el.classList.contains('playful-message') && !el.classList.contains('usage-limit-message')) {
+              chatHistory.push({
+                role: isUser ? 'user' : 'assistant',
+                content: text
+              });
+            }
+          }
+        });
+      }
+      
       const response = await chrome.runtime.sendMessage({
-        action: 'ask-question',
-        question,
-        transcript: currentVideoInfo?.transcript,
-        summary: summaryContent?.textContent
+        action: 'sidechat',
+        message: question,
+        chatHistory: chatHistory,
+        context: combinedContext
       });
 
       if (response?.error) {
-        addChatMessage(`Error: ${response.error}`);
+        addChatMessage(`Error: ${response.error}`, false);
+      } else if (response?.reply) {
+        addChatMessage(response.reply, false);
       } else {
-        addChatMessage(response.answer);
+        addChatMessage('Sorry, I encountered an error while processing your question.', false);
       }
 
       // Update status cards after successful question
       await updateStatusCards();
     } catch (error) {
       console.error('Error submitting question:', error);
-      addChatMessage('Sorry, I encountered an error while processing your question.');
+      addChatMessage('Sorry, I encountered an error while processing your question.', false);
     }
 
     // Show completion state
@@ -650,9 +673,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Rotating placeholder text for question input
   const placeholders = [
-    "Ask me to summarize",
-    "Ask me to clarify",
-    "Ask a unique question"
+    "Ask me to summarize chapters 1-5 in the PDF",
+    "Ask me a unique question",
+    "Ask me to clarify something"
   ];
   let placeholderIndex = 0;
   let placeholderInterval = null;
@@ -755,6 +778,124 @@ document.addEventListener('DOMContentLoaded', async () => {
         infoDialog.close();
       }
     });
+  }
+
+  // PDF Upload functionality
+  const uploadPdfButton = document.getElementById('upload-pdf-button');
+  const pdfUploadInput = document.getElementById('pdf-upload-input');
+  const pdfUploadStatus = document.getElementById('pdf-upload-status');
+
+  // Function to extract PDF text (sends to backend)
+  async function extractPdfText(file) {
+    const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+    const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+    const token = stored.sumvid_auth_token;
+
+    if (!token) {
+      throw new Error('Please log in to upload PDFs');
+    }
+
+    const formData = new FormData();
+    formData.append('pdf', file);
+
+    const response = await fetch(`${BACKEND_URL}/api/extract-pdf`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to extract PDF text' }));
+      throw new Error(errorData.error || 'Failed to extract PDF text');
+    }
+
+    const data = await response.json();
+    return data.text;
+  }
+
+  // Function to handle PDF upload
+  async function handlePdfUpload(file) {
+    if (!file || file.type !== 'application/pdf') {
+      alert('Please select a valid PDF file');
+      return;
+    }
+
+    // Update status
+    if (pdfUploadStatus) {
+      pdfUploadStatus.textContent = `Processing ${file.name}...`;
+      pdfUploadStatus.style.display = 'inline-block';
+      pdfUploadStatus.classList.remove('loaded');
+    }
+
+    try {
+      // Extract text from PDF
+      const pdfText = await extractPdfText(file);
+
+      // Store in chrome.storage.local
+      await chrome.storage.local.set({
+        uploadedPdfContext: {
+          text: pdfText,
+          filename: file.name,
+          timestamp: Date.now()
+        }
+      });
+
+      // Update status
+      if (pdfUploadStatus) {
+        pdfUploadStatus.textContent = `PDF loaded: ${file.name}`;
+        pdfUploadStatus.classList.add('loaded');
+      }
+
+      console.log('[Eureka AI] PDF uploaded and text extracted successfully');
+    } catch (error) {
+      console.error('[Eureka AI] Error uploading PDF:', error);
+      alert(`Failed to upload PDF: ${error.message}`);
+      if (pdfUploadStatus) {
+        pdfUploadStatus.style.display = 'none';
+      }
+    }
+  }
+
+  // Event listeners for PDF upload
+  if (uploadPdfButton && pdfUploadInput) {
+    uploadPdfButton.addEventListener('click', () => {
+      pdfUploadInput.click();
+    });
+
+    pdfUploadInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        handlePdfUpload(file);
+      }
+    });
+  }
+
+  // Function to get combined context (webpage/video + uploaded PDF)
+  async function getCombinedContext() {
+    const stored = await chrome.storage.local.get(['currentContentInfo', 'uploadedPdfContext']);
+    const contentInfo = stored.currentContentInfo || currentVideoInfo;
+    const uploadedPdf = stored.uploadedPdfContext;
+
+    let context = '';
+
+    // Add webpage/video/PDF context
+    if (contentInfo) {
+      const contentType = contentInfo.type || 'webpage';
+      if (contentType === 'video' && contentInfo.transcript) {
+        context += `Video transcript:\n${contentInfo.transcript.substring(0, 5000)}\n\n`;
+      } else if (contentInfo.text) {
+        context += `${contentType === 'pdf' ? 'PDF' : 'Webpage'} content:\n${contentInfo.text.substring(0, 5000)}\n\n`;
+      }
+    }
+
+    // Add uploaded PDF context
+    if (uploadedPdf && uploadedPdf.text) {
+      context += `Uploaded PDF (${uploadedPdf.filename}):\n${uploadedPdf.text.substring(0, 5000)}\n\n`;
+    }
+
+    return context.trim();
   }
 
   // Info dialog GET PRO button handler
@@ -2781,16 +2922,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           // Build system prompt with context (not shown to user)
           let systemPrompt = `Please clarify the following text in the context of the current webpage:\n\n"${textToClarify}"\n\n`;
           
-          // Get content info for context
-          const contentType = contentInfo?.type || 'webpage';
-          const contentText = contentType === 'video' 
-            ? (contentInfo?.transcript || '')
-            : (contentInfo?.text || '');
+          // Get combined context (webpage/video/PDF + uploaded PDF)
+          const combinedContext = await getCombinedContext();
           
-          if (contentText) {
-            // Include a snippet of the webpage content for context (in system prompt only)
-            const contextSnippet = contentText.substring(0, 2000); // First 2000 chars for context
-            systemPrompt += `Here is the context from the ${contentType}:\n\n${contextSnippet}`;
+          if (combinedContext) {
+            // Include context in system prompt
+            const contextSnippet = combinedContext.substring(0, 2000); // First 2000 chars for context
+            systemPrompt += `Here is the context:\n\n${contextSnippet}`;
           }
           
           // Show only the user's actual question to the chat UI
@@ -2810,7 +2948,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             action: 'sidechat',
             message: systemPrompt,
             chatHistory: [],
-            context: contentText ? contentText.substring(0, 5000) : '' // Include context for clarification
+            context: combinedContext ? combinedContext.substring(0, 5000) : '' // Include combined context for clarification
           });
           
           if (response?.error) {

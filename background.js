@@ -1,7 +1,7 @@
 // Backend API configuration
 const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com'; // Update with your backend URL
 
-console.log('[SumVid] Background script loaded');
+console.log('[Eureka AI] Background script loaded');
 
 // Helper function to get JWT token from storage
 async function getAuthToken() {
@@ -136,6 +136,109 @@ async function generateQuiz(transcript, summary, context, title, videoId) {
 // Auto-generation removed - users must manually trigger generation via buttons
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Handle open side panel request
+  // Note: sidePanel.open() must be called in response to a user gesture
+  // This handler is kept for compatibility but may not work in all cases
+  if (message.action === 'open-side-panel') {
+    (async () => {
+      try {
+        // Try to open side panel, but this may fail if not in response to user gesture
+        const tabId = sender.tab?.id;
+        if (tabId) {
+          try {
+            await chrome.sidePanel.open({ tabId });
+            sendResponse({ success: true });
+          } catch (error) {
+            // If opening fails, the side panel might already be open or user needs to click icon
+            console.warn('[Eureka AI] Could not open side panel programmatically:', error.message);
+            sendResponse({ success: false, error: 'Side panel must be opened via user gesture. Please click the extension icon.' });
+          }
+        } else {
+          // If no tab ID, try to get current active tab
+          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tabs[0]) {
+            try {
+              await chrome.sidePanel.open({ tabId: tabs[0].id });
+              sendResponse({ success: true });
+            } catch (error) {
+              console.warn('[Eureka AI] Could not open side panel programmatically:', error.message);
+              sendResponse({ success: false, error: 'Side panel must be opened via user gesture. Please click the extension icon.' });
+            }
+          } else {
+            sendResponse({ success: false, error: 'No active tab found' });
+          }
+        }
+      } catch (error) {
+        console.error('[Eureka AI] Error opening side panel:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true; // Keep channel open for async response
+  }
+
+  // Handle open side panel and clarify in one action
+  if (message.action === 'open-side-panel-and-clarify') {
+    (async () => {
+      try {
+        const tabId = sender.tab?.id;
+        
+        // Try to open side panel (may fail if not in user gesture context, but we try anyway)
+        if (tabId) {
+          try {
+            await chrome.sidePanel.open({ tabId });
+          } catch (error) {
+            console.warn('[Eureka AI] Could not open side panel programmatically:', error.message);
+            // Continue anyway - sidebar might already be open
+          }
+        }
+        
+        // Store the clarify request in storage so sidebar can pick it up
+        await chrome.storage.local.set({
+          clarifyRequest: {
+            text: message.text,
+            timestamp: Date.now()
+          }
+        });
+        
+        // Also send message directly to sidebar if it's listening
+        setTimeout(() => {
+          chrome.runtime.sendMessage({
+            action: 'selection-clarify',
+            text: message.text
+          }).catch(() => {
+            // Sidebar might not be ready yet, that's okay - it will check storage
+          });
+        }, 300);
+        
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('[Eureka AI] Error handling open-side-panel-and-clarify:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  // Handle clarify selected text - forward to sidebar
+  if (message.action === 'clarify-selected-text') {
+    (async () => {
+      try {
+        // Store the clarify request in storage so sidebar can pick it up
+        await chrome.storage.local.set({
+          clarifyRequest: {
+            text: message.text,
+            timestamp: Date.now()
+          }
+        });
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('[Eureka AI] Error storing clarify request:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === 'VIDEO_INFO' || message.type === 'CONTENT_INFO') {
     (async () => {
       try {
@@ -187,7 +290,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         sendResponse({ success: true });
       } catch (error) {
-        console.error('[SumVid] Error processing content info:', error);
+        console.error('[Eureka AI] Error processing content info:', error);
         sendResponse({ success: false, error: error.message });
       }
     })();
@@ -217,7 +320,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const summary = await generateSummary(contentText, message.context, contentInfo.title, contentId, contentType);
         sendResponse({ success: true, summary });
       } catch (error) {
-        console.error('[SumVid] Summarization error:', error);
+        console.error('[Eureka AI] Summarization error:', error);
         sendResponse({ success: false, error: error.message || 'Failed to generate summary' });
       }
     })();
@@ -275,7 +378,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const response = await callBackendAPI('/api/qa', 'POST', requestBody);
         sendResponse({ success: true, answer: response.answer });
       } catch (error) {
-        console.error('[SumVid] Question answering error:', error);
+        console.error('[Eureka AI] Question answering error:', error);
         sendResponse({
           success: false,
           error: error.message || 'Failed to answer question'
@@ -317,7 +420,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const response = await callBackendAPI('/api/flashcards', 'POST', requestBody);
         sendResponse({ success: true, flashcards: response.flashcards });
       } catch (error) {
-        console.error('[SumVid] Flashcard generation error:', error);
+        console.error('[Eureka AI] Flashcard generation error:', error);
         sendResponse({
           success: false,
           error: error.message || 'Failed to generate flashcards'
@@ -328,13 +431,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === 'sidechat') {
     (async () => {
       try {
-        const response = await callBackendAPI('/api/chat', 'POST', {
+        // Get current content info for context if available
+        const stored = await chrome.storage.local.get(['currentContentInfo']);
+        const contentInfo = stored.currentContentInfo || currentVideoInfo;
+        
+        const requestBody = {
           message: message.message,
           chatHistory: message.chatHistory || []
-        });
+        };
+        
+        // Add context if provided
+        if (message.context) {
+          requestBody.context = message.context;
+        } else if (contentInfo) {
+          // Auto-include content context for better responses
+          const contentType = contentInfo.type || 'webpage';
+          const contentText = contentType === 'video' 
+            ? (contentInfo.transcript || '')
+            : (contentInfo.text || '');
+          
+          if (contentText) {
+            requestBody.context = contentText.substring(0, 5000); // Include context
+          }
+        }
+        
+        const response = await callBackendAPI('/api/chat', 'POST', requestBody);
         sendResponse({ success: true, reply: response.reply });
       } catch (error) {
-        console.error('[SumVid] Sidechat error:', error);
+        console.error('[Eureka AI] Sidechat error:', error);
         sendResponse({
           success: false,
           error: error.message || 'Failed to send message'
@@ -387,17 +511,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Enable side panel globally (without tabId) - must be done first
 chrome.sidePanel.setOptions({ enabled: true }).then(() => {
-  console.log('[SumVid] Side panel enabled globally');
+  console.log('[Eureka AI] Side panel enabled globally');
   
   // Set panel behavior to automatically open when action icon is clicked
   // This must be called AFTER enabling globally
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).then(() => {
-    console.log('[SumVid] Side panel behavior set');
+    console.log('[Eureka AI] Side panel behavior set');
   }).catch(error => {
-    console.warn('[SumVid] Could not set side panel behavior:', error);
+    console.warn('[Eureka AI] Could not set side panel behavior:', error);
   });
 }).catch(err => {
-  console.warn('[SumVid] Could not enable side panel globally:', err);
+  console.warn('[Eureka AI] Could not enable side panel globally:', err);
 });
 
 // Track tabs - don't clear content info, extension works on all pages
@@ -413,9 +537,9 @@ chrome.runtime.onStartup.addListener(async () => {
     // Enable globally first, then set behavior
     await chrome.sidePanel.setOptions({ enabled: true });
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    console.log('[SumVid] Side panel enabled and behavior set on startup');
+    console.log('[Eureka AI] Side panel enabled and behavior set on startup');
   } catch (error) {
-    console.warn('[SumVid] Could not set side panel on startup:', error);
+    console.warn('[Eureka AI] Could not set side panel on startup:', error);
   }
 });
 
@@ -428,9 +552,9 @@ chrome.runtime.onInstalled.addListener(async () => {
   try {
     await chrome.sidePanel.setOptions({ enabled: true });
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    console.log('[SumVid] Side panel enabled and behavior set on install');
+    console.log('[Eureka AI] Side panel enabled and behavior set on install');
   } catch (error) {
-    console.warn('[SumVid] Could not set side panel on install:', error);
+    console.warn('[Eureka AI] Could not set side panel on install:', error);
   }
   
   chrome.storage.local.get(['darkMode'], (result) => {

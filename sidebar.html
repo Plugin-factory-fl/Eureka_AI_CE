@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SumVid - AI Video Summarizer</title>
+  <title>Eureka AI</title>
   <link rel="stylesheet" href="sidebar.css">
   <link rel="stylesheet" href="styles/SettingsPanel.css">
   <link rel="stylesheet" href="styles/LoginMenu.css">
@@ -14,11 +14,16 @@
   <div class="container">
     <div class="logo-container">
       <div class="logo">
-        <img src="icons/icon48.png" alt="SumVid Logo" width="32" height="32">
+        <img src="icons/icon48.png" alt="Eureka AI Logo" width="32" height="32">
       </div>
       <div class="title-group">
-        <h1>SumVid <span class="learn-gradient">Learn</span></h1>
-        <p class="tagline">10X your learning speed</p>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h1>Eureka <span class="learn-gradient">AI</span></h1>
+          <button class="info-button" id="eureka-info-btn" type="button" aria-label="Eureka AI information">
+            <span class="info-button__icon">i</span>
+          </button>
+        </div>
+        <p class="tagline">Chat Workflow Sidebar for Learners and Educators</p>
       </div>
       <div class="panel__actions">
         <button class="btn btn--ghost" id="open-settings" aria-label="Settings" type="button">
@@ -42,26 +47,10 @@
     </div>
     
     <div class="content">
-      <!-- Status Cards Section -->
-      <section class="panel__section panel__section--status" id="status-section" style="display: none;">
-        <div class="status-card">
-          <div class="status-card__label">User</div>
-          <div class="status-card__value" id="user-status">Not Logged In</div>
-          <div class="status-card__plan-row">
-            <span class="status-card__label">Plan</span>
-            <button class="btn btn--ghost btn--pill btn--upgrade" id="status-upgrade-btn" type="button" style="display: none; opacity: 0;">
-              Get Pro
-            </button>
-          </div>
-          <div class="status-card__value" id="user-plan">Freemium</div>
-        </div>
-        <div class="status-card" id="enhancements-used-card">
-          <div class="status-card__label">Enhancements used</div>
-          <div class="status-card__value">
-            <span id="enhancements-count">0</span>/<span id="enhancements-limit">10</span>
-          </div>
-        </div>
-      </section>
+      <!-- Get Pro Button (Always visible at top) -->
+      <button id="get-pro-button" class="get-pro-button" type="button">
+        Get Pro
+      </button>
 
       <!-- AI Chat Section (Always Visible) -->
       <section class="panel__section panel__section--chat" id="chat-section">
@@ -119,7 +108,7 @@
                 <line x1="16" y1="17" x2="8" y2="17"></line>
                 <polyline points="10 9 9 9 8 9"></polyline>
               </svg>
-              Your SumVid Summary
+              Summarize this content
               <div class="status-indicator">
                 <span class="usage-badge">1 use</span>
                 <div class="loading-spinner" style="display: none;"></div>
@@ -255,18 +244,18 @@
               </svg>
               Notes
             </h3>
-            <div class="notes-actions">
+            <div class="header-buttons">
               <select id="notes-filter" class="notes-filter">
                 <option value="all">All Notes</option>
                 <option value="Uncategorized">Uncategorized</option>
               </select>
-              <button id="create-note-button" class="btn btn--primary" style="font-size: 12px; padding: 6px 12px;">New Note</button>
+              <button id="create-note-button" class="btn btn--primary" title="Create New Note">New Note</button>
+              <button class="collapse-button">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
             </div>
-            <button class="collapse-button">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-            </button>
           </div>
           <div id="notes-content" class="notes-content collapsed">
             <div id="notes-list" class="notes-list"></div>
@@ -326,10 +315,10 @@
       <div class="modal__body settings-form">
         <label class="form-field form-field--toggle">
           <div class="form-field__label-group">
-            <span class="form-field__label">Auto-collapse Sections</span>
-            <span class="form-field__description">Automatically collapse sections after generation</span>
+            <span class="form-field__label">Dark Mode</span>
+            <span class="form-field__description">Switch between light and dark theme</span>
           </div>
-          <input type="checkbox" id="setting-auto-collapse" />
+          <input type="checkbox" id="setting-dark-mode" />
           <span class="toggle-switch"></span>
         </label>
       </div>
@@ -387,8 +376,27 @@
       </header>
       <div class="modal__body account__logged-in-body">
         <div class="account__user-info">
-          <p class="account__logged-in-as">Logged in as <span id="account-user-name">User</span></p>
+          <p class="account__logged-in-as">
+            <span id="account-user-name">User</span>
+            <span id="account-user-email" class="account__user-email"></span>
+          </p>
           <button type="button" class="account__switch-link" id="switch-account">Switch accounts?</button>
+        </div>
+        <div class="account__status-cards">
+          <div class="status-card">
+            <div class="status-card__label">User</div>
+            <div class="status-card__value" id="account-user-status">Not Logged In</div>
+            <div class="status-card__plan-row">
+              <span class="status-card__label">Plan</span>
+            </div>
+            <div class="status-card__value" id="account-user-plan">Freemium</div>
+          </div>
+          <div class="status-card" id="account-enhancements-used-card">
+            <div class="status-card__label">Enhancements used</div>
+            <div class="status-card__value">
+              <span id="account-enhancements-count">0</span>/<span id="account-enhancements-limit">10</span>
+            </div>
+          </div>
         </div>
         <div class="account__plan-info">
           <p class="account__plan-label">Current Plan: <span id="account-plan-name">Freemium</span></p>
@@ -512,6 +520,47 @@
         </div>
       </div>
     </form>
+  </dialog>
+
+  <!-- Info Dialog -->
+  <dialog id="eureka-info-dialog" class="info-dialog">
+    <div class="modal__content">
+      <header class="modal__header">
+        <h2>About Eureka AI</h2>
+        <button class="btn btn--ghost modal__close" value="cancel" aria-label="Close info dialog">
+          <svg class="icon icon--close" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.05 6.34a1 1 0 0 1 1.41 0L12 9.88l3.54-3.54a1 1 0 1 1 1.41 1.41L13.41 11.3l3.54 3.54a1 1 0 0 1-1.41 1.41L12 12.7l-3.54 3.54a1 1 0 0 1-1.41-1.41l3.54-3.54-3.54-3.54a1 1 0 0 1 0-1.41Z" />
+          </svg>
+        </button>
+      </header>
+      <div class="modal__body info-dialog__body">
+        <div class="info-dialog__description">
+          <p>Eureka AI is a powerful Chrome extension that helps learners and educators enhance their learning experience. Get AI-powered summaries, flashcards, quizzes, and interactive chat for any YouTube video or webpage content.</p>
+        </div>
+        <div class="info-dialog__steps">
+          <h3>Getting Started</h3>
+          <div class="info-dialog__step-section">
+            <h4>For YouTube Videos:</h4>
+            <ol>
+              <li>Open any YouTube video</li>
+              <li>Click the Eureka AI icon in your browser toolbar</li>
+              <li>Use Summarize, Flashcards, or Test features to enhance your learning</li>
+            </ol>
+          </div>
+          <div class="info-dialog__step-section">
+            <h4>For Webpages:</h4>
+            <ol>
+              <li>Navigate to any webpage</li>
+              <li>Click the Eureka AI icon in your browser toolbar</li>
+              <li>Chat with AI about the content or generate summaries</li>
+            </ol>
+          </div>
+        </div>
+        <div class="info-dialog__cta">
+          <button type="button" class="btn btn--primary" id="info-dialog-get-pro-btn">GET PRO</button>
+        </div>
+      </div>
+    </div>
   </dialog>
 
   <script src="Source/usageTracker.js"></script>

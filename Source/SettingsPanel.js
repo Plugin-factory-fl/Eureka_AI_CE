@@ -1,6 +1,6 @@
 /**
  * Settings Panel Module
- * Handles settings dialog functionality for SumVid Learn
+ * Handles settings dialog functionality for Eureka AI
  * Frontend-only implementation
  */
 
@@ -19,22 +19,28 @@ function registerSettingsHandlers() {
   // Load and render current settings
   async function loadSettings() {
     try {
-      const result = await chrome.storage.local.get(['settings']);
+      const result = await chrome.storage.local.get(['settings', 'darkMode']);
       const settings = result.settings || {
-        autoCollapse: false,
         cacheDuration: 24
       };
+      const darkMode = result.darkMode || false;
 
-      // Update auto-collapse toggle
-      const autoCollapseToggle = document.getElementById('setting-auto-collapse');
-      if (autoCollapseToggle) {
-        autoCollapseToggle.checked = settings.autoCollapse || false;
+      // Update dark mode toggle
+      const darkModeToggle = document.getElementById('setting-dark-mode');
+      if (darkModeToggle) {
+        darkModeToggle.checked = darkMode;
+        // Apply dark mode if enabled
+        if (darkMode) {
+          document.body.setAttribute('data-theme', 'dark');
+        } else {
+          document.body.removeAttribute('data-theme');
+        }
       }
 
-      return settings;
+      return { ...settings, darkMode };
     } catch (error) {
       console.error('[SettingsPanel] Error loading settings:', error);
-      return { autoCollapse: false, cacheDuration: 24 };
+      return { darkMode: false, cacheDuration: 24 };
     }
   }
 
@@ -54,6 +60,21 @@ function registerSettingsHandlers() {
     settingsDialog.showModal();
   });
 
+  // Handle dark mode toggle in real-time
+  const darkModeToggle = document.getElementById('setting-dark-mode');
+  if (darkModeToggle) {
+    darkModeToggle.addEventListener('change', async (e) => {
+      const isDark = e.target.checked;
+      if (isDark) {
+        document.body.setAttribute('data-theme', 'dark');
+      } else {
+        document.body.removeAttribute('data-theme');
+      }
+      // Save immediately for better UX
+      await chrome.storage.local.set({ darkMode: isDark });
+    });
+  }
+
   // Handle dialog close
   settingsDialog.addEventListener('close', async () => {
     if (settingsDialog.returnValue !== 'confirm') {
@@ -63,17 +84,22 @@ function registerSettingsHandlers() {
     }
 
     // User confirmed, save settings
-    const autoCollapseToggle = document.getElementById('setting-auto-collapse');
+    const darkModeToggle = document.getElementById('setting-dark-mode');
 
+    const darkMode = darkModeToggle ? darkModeToggle.checked : false;
     const newSettings = {
-      autoCollapse: autoCollapseToggle ? autoCollapseToggle.checked : false,
       cacheDuration: 24 // Can be made configurable later
     };
 
     await saveSettings(newSettings);
+    await chrome.storage.local.set({ darkMode });
 
-    // Ensure light mode is always active (remove dark mode attribute if present)
-    document.body.removeAttribute('data-theme');
+    // Apply dark mode setting
+    if (darkMode) {
+      document.body.setAttribute('data-theme', 'dark');
+    } else {
+      document.body.removeAttribute('data-theme');
+    }
 
     // Trigger custom event for other modules to react to settings changes
     window.dispatchEvent(new CustomEvent('settingsUpdated', { detail: newSettings }));
@@ -115,8 +141,15 @@ function registerSettingsHandlers() {
  */
 async function initializeSettings() {
   try {
-    // Always ensure light mode is active (remove dark mode attribute if present)
-    document.body.removeAttribute('data-theme');
+    // Load dark mode preference
+    const result = await chrome.storage.local.get(['darkMode']);
+    const darkMode = result.darkMode || false;
+    
+    if (darkMode) {
+      document.body.setAttribute('data-theme', 'dark');
+    } else {
+      document.body.removeAttribute('data-theme');
+    }
   } catch (error) {
     console.error('[SettingsPanel] Error initializing settings:', error);
   }

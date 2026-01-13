@@ -1,4 +1,4 @@
-# SumVid Learn - AI Video Summarizer Chrome Extension
+# Eureka AI - Chat Workflow Sidebar for Learners and Educators
 
 A powerful Chrome extension that helps you understand YouTube videos better by providing AI-powered summaries, interactive quizzes, and a smart Q&A system - all written at a 5th-grade reading level for maximum accessibility.
 

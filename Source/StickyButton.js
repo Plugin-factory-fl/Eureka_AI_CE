@@ -6,10 +6,10 @@
 (function() {
   'use strict';
 
-  const BUTTON_ID = 'sumvid-sticky-button';
-  const TOAST_ID = 'sumvid-sticky-toast';
-  const STORAGE_KEY = 'sumvid-sticky-button-position';
-  const TOAST_STORAGE_KEY = 'sumvid-toast-shown';
+  const BUTTON_ID = 'eureka-ai-sticky-button';
+  const TOAST_ID = 'eureka-ai-sticky-toast';
+  const STORAGE_KEY = 'eureka-ai-sticky-button-position';
+  const TOAST_STORAGE_KEY = 'eureka-ai-toast-shown';
 
   let stickyButton = null;
   let toastElement = null;
@@ -45,8 +45,8 @@
     const button = document.createElement('button');
     button.id = BUTTON_ID;
     button.type = 'button';
-    button.className = 'sumvid-sticky-button';
-    button.setAttribute('aria-label', 'Open SumVid Learn to summarize this video');
+    button.className = 'eureka-ai-sticky-button';
+    button.setAttribute('aria-label', 'Open Eureka AI side panel');
 
     // Create icon
     const icon = createButtonIcon();
@@ -92,7 +92,7 @@
    */
   function createButtonIcon() {
     const icon = document.createElement('span');
-    icon.className = 'sumvid-sticky-button__icon';
+    icon.className = 'eureka-ai-sticky-button__icon';
     icon.setAttribute('aria-hidden', 'true');
 
     if (typeof chrome !== 'undefined' && chrome.runtime) {
@@ -124,7 +124,7 @@
     button.style.transition = 'transform 120ms ease, box-shadow 120ms ease';
 
     // Update icon size
-    const icon = button.querySelector('.sumvid-sticky-button__icon');
+    const icon = button.querySelector('.eureka-ai-sticky-button__icon');
     if (icon) {
       icon.style.width = `${iconSize}px`;
       icon.style.height = `${iconSize}px`;
@@ -223,10 +223,7 @@
     dragOffsetX = e.clientX - buttonX;
     dragOffsetY = e.clientY - buttonY;
 
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-
-    button.classList.add('sumvid-sticky-button--dragging');
+      button.classList.add('eureka-ai-sticky-button--dragging');
     button.style.cursor = 'grabbing';
     button.style.opacity = '0.8';
 
@@ -272,7 +269,7 @@
 
     isDragging = false;
 
-    button.classList.remove('sumvid-sticky-button--dragging');
+    button.classList.remove('eureka-ai-sticky-button--dragging');
     button.style.cursor = 'grab';
     button.style.opacity = '1';
 
@@ -375,8 +372,8 @@
 
     const toast = document.createElement('div');
     toast.id = TOAST_ID;
-    toast.className = 'sumvid-sticky-toast';
-    toast.textContent = 'Save time. Summarize this video.';
+    toast.className = 'eureka-ai-sticky-toast';
+    toast.textContent = 'Click here to open Eureka AI';
 
     document.body.appendChild(toast);
 
@@ -420,22 +417,16 @@
   }
 
   /**
-   * Toggles the sidebar (called when button is clicked)
+   * Opens the side panel (called when button is clicked)
    */
-  function toggleSidebar() {
-    // Prefer global function set by content script
-    if (typeof window.toggleSidebar === 'function') {
-      window.toggleSidebar();
-      return;
-    }
-    
-    // Fallback: send message to background script
+  async function toggleSidebar() {
     if (typeof chrome !== 'undefined' && chrome.runtime) {
-      chrome.runtime.sendMessage({ type: 'TOGGLE_SIDEBAR' }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('[SumVid] Failed to toggle sidebar:', chrome.runtime.lastError);
-        }
-      });
+      try {
+        // Send message to open side panel
+        await chrome.runtime.sendMessage({ action: 'open-side-panel' });
+      } catch (error) {
+        console.error('[Eureka AI] Failed to open side panel:', error);
+      }
     }
   }
 
@@ -453,7 +444,7 @@
     }
 
     const link = document.createElement('link');
-    link.id = 'sumvid-sticky-button-style';
+    link.id = 'eureka-ai-sticky-button-style';
     link.rel = 'stylesheet';
     link.href = chrome.runtime.getURL('styles/StickyButton.css');
     document.head.appendChild(link);
@@ -486,12 +477,12 @@
 
   // Export to global scope (do this immediately to avoid timing issues)
   try {
-    window.SumVidStickyButton = {
+    window.EurekaAIStickyButton = {
       init: initStickyButton,
       remove: removeStickyButton
     };
-    console.log('[SumVid] StickyButton module exported to window');
+    console.log('[Eureka AI] StickyButton module exported to window');
   } catch (error) {
-    console.error('[SumVid] Failed to export StickyButton module:', error);
+    console.error('[Eureka AI] Failed to export StickyButton module:', error);
   }
 })();

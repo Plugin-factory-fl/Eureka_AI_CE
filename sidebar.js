@@ -324,7 +324,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Chat section is always visible (no collapse handling needed)
 
   // Function to add a message to the chat
+  // Playful chat message
+  let playfulMessageShown = false;
+
+  function showPlayfulMessage() {
+    if (!chatMessages || playfulMessageShown || chatMessages.children.length > 0) return;
+    
+    const messageElement = document.createElement('div');
+    messageElement.className = 'chat-message assistant playful-message';
+    
+    const text = 'Eureka AI for Chrome';
+    const waveText = text.split('').map((char, index) => {
+      if (char === ' ') {
+        return '<span class="wave-char" style="display: inline-block; width: 0.3em;"> </span>';
+      }
+      return `<span class="wave-char" style="animation-delay: ${index * 0.1}s;">${char}</span>`;
+    }).join('');
+    
+    messageElement.innerHTML = `<span class="wave-text">${waveText}</span>`;
+    chatMessages.appendChild(messageElement);
+    playfulMessageShown = true;
+  }
+
+  function hidePlayfulMessage() {
+    if (!chatMessages) return;
+    const playfulMsg = chatMessages.querySelector('.playful-message');
+    if (playfulMsg) {
+      playfulMsg.remove();
+      playfulMessageShown = false;
+    }
+  }
+
   function addChatMessage(message, isUser = false) {
+    // Hide playful message when user sends first message
+    if (isUser) {
+      hidePlayfulMessage();
+    }
+    
     const messageElement = document.createElement('div');
     messageElement.className = `chat-message ${isUser ? 'user' : 'assistant'}`;
     messageElement.textContent = message;
@@ -359,6 +395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const cachedChat = await loadGeneratedContent(videoId, 'chat');
     if (cachedChat && Array.isArray(cachedChat)) {
       chatMessages.innerHTML = '';
+      playfulMessageShown = false;
       cachedChat.forEach(message => {
         const messageElement = document.createElement('div');
         messageElement.className = `chat-message ${message.isUser ? 'user' : 'assistant'}`;
@@ -477,10 +514,89 @@ document.addEventListener('DOMContentLoaded', async () => {
     const question = questionInput?.value.trim();
     if (!question) return;
 
-    // Check usage limit before processing question
-    const limitReached = await checkUsageLimit();
-    if (limitReached) {
-      alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+    // Check usage limit and subscription status before processing question
+    const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+    const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+    const token = stored.sumvid_auth_token;
+    
+    let limitReached = false;
+    let isPremium = false;
+    
+    if (token) {
+      try {
+        const usageResponse = await fetch(`${BACKEND_URL}/api/user/usage`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (usageResponse.ok) {
+          const usage = await usageResponse.json();
+          limitReached = usage.enhancementsUsed >= usage.enhancementsLimit;
+          isPremium = usage.subscriptionStatus === 'premium';
+        }
+      } catch (error) {
+        console.warn('[Eureka AI] Failed to check usage from backend:', error);
+        // Fallback to local check
+        limitReached = await checkUsageLimit();
+      }
+    } else {
+      // Not logged in, check local storage
+      limitReached = await checkUsageLimit();
+    }
+    
+    if (limitReached && !isPremium) {
+      // Show styled message with upgrade link
+      const messageText = "You're out of uses for Eureka AI! Wait 24 hours for 10 more uses or ";
+      const upgradeLinkText = "UPGRADE TO PRO";
+      const messageAfterLink = " for unlimited access.";
+      
+      const messageElement = document.createElement('div');
+      messageElement.className = 'chat-message assistant usage-limit-message';
+      messageElement.innerHTML = `${messageText}<a href="#" class="upgrade-link" id="chat-upgrade-link">${upgradeLinkText}</a>${messageAfterLink}`;
+      chatMessages?.appendChild(messageElement);
+      if (chatMessages) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+      
+      // Add click handler for upgrade link
+      const upgradeLink = document.getElementById('chat-upgrade-link');
+      if (upgradeLink) {
+        upgradeLink.addEventListener('click', async (e) => {
+          e.preventDefault();
+          if (!token) {
+            alert('Please log in to upgrade to Pro');
+            return;
+          }
+          
+          try {
+            const response = await fetch(`${BACKEND_URL}/api/checkout/create-session`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+            });
+            
+            if (!response.ok) {
+              throw new Error('Failed to create checkout session');
+            }
+            
+            const data = await response.json();
+            if (data.url) {
+              window.open(data.url, '_blank');
+            } else {
+              alert('Upgrade feature coming soon!');
+            }
+          } catch (error) {
+            console.error('[Eureka AI] Upgrade error:', error);
+            alert(`Failed to initiate upgrade: ${error.message || 'Unknown error'}`);
+          }
+        });
+      }
+      
       return;
     }
 
@@ -531,6 +647,183 @@ document.addEventListener('DOMContentLoaded', async () => {
       handleQuestionSubmit();
     }
   });
+
+  // Rotating placeholder text for question input
+  const placeholders = [
+    "Ask me to summarize",
+    "Ask me to clarify",
+    "Ask a unique question"
+  ];
+  let placeholderIndex = 0;
+  let placeholderInterval = null;
+
+  function startPlaceholderRotation() {
+    if (placeholderInterval || !questionInput) return;
+    placeholderInterval = setInterval(() => {
+      if (questionInput && !questionInput.value && document.activeElement !== questionInput) {
+        placeholderIndex = (placeholderIndex + 1) % placeholders.length;
+        questionInput.placeholder = placeholders[placeholderIndex];
+      }
+    }, 2000);
+  }
+
+  function stopPlaceholderRotation() {
+    if (placeholderInterval) {
+      clearInterval(placeholderInterval);
+      placeholderInterval = null;
+    }
+  }
+
+  // Initialize placeholder rotation
+  if (questionInput) {
+    questionInput.placeholder = placeholders[0];
+    startPlaceholderRotation();
+    
+    // Stop rotation when input is focused
+    questionInput.addEventListener('focus', () => {
+      stopPlaceholderRotation();
+    });
+    
+    // Resume rotation when input is blurred (if empty)
+    questionInput.addEventListener('blur', () => {
+      if (!questionInput.value) {
+        startPlaceholderRotation();
+      }
+    });
+    
+    // Stop rotation if user types something
+    questionInput.addEventListener('input', () => {
+      if (questionInput.value) {
+        stopPlaceholderRotation();
+      } else if (document.activeElement !== questionInput) {
+        startPlaceholderRotation();
+      }
+    });
+  }
+
+  // Get Pro button text alternation
+  const getProButton = document.getElementById('get-pro-button');
+  const getProTexts = ['Get Pro', 'Get unlimited usage'];
+  let getProTextIndex = 0;
+  let getProInterval = null;
+
+  function startGetProTextRotation() {
+    if (getProInterval || !getProButton) return;
+    getProInterval = setInterval(() => {
+      if (getProButton) {
+        getProTextIndex = (getProTextIndex + 1) % getProTexts.length;
+        getProButton.textContent = getProTexts[getProTextIndex];
+      }
+    }, 3500); // Change every 3.5 seconds
+  }
+
+  if (getProButton) {
+    getProButton.textContent = getProTexts[0];
+    startGetProTextRotation();
+  }
+
+  // Info button handler
+  const infoButton = document.getElementById('eureka-info-btn');
+  const infoDialog = document.getElementById('eureka-info-dialog');
+  const infoDialogGetProBtn = document.getElementById('info-dialog-get-pro-btn');
+  
+  if (infoButton && infoDialog) {
+    infoButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      infoDialog.showModal();
+    });
+  }
+
+  // Info dialog close handlers
+  if (infoDialog) {
+    const closeButtons = infoDialog.querySelectorAll('.modal__close, button[value="cancel"]');
+    closeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        infoDialog.close();
+      });
+    });
+
+    infoDialog.addEventListener('click', (e) => {
+      if (e.target === infoDialog) {
+        infoDialog.close();
+      }
+    });
+
+    infoDialog.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        infoDialog.close();
+      }
+    });
+  }
+
+  // Info dialog GET PRO button handler
+  if (infoDialogGetProBtn) {
+    infoDialogGetProBtn.addEventListener('click', async () => {
+      const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+      const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+      const token = stored.sumvid_auth_token;
+      
+      if (!token) {
+        alert('Please log in to upgrade to Pro');
+        return;
+      }
+
+      // Disable button to prevent double-clicks
+      infoDialogGetProBtn.disabled = true;
+      const originalText = infoDialogGetProBtn.textContent;
+      infoDialogGetProBtn.textContent = 'Loading...';
+
+      try {
+        console.log('[Info Dialog Get Pro] Creating checkout session...');
+        const response = await fetch(`${BACKEND_URL}/api/checkout/create-session`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+        });
+
+        console.log('[Info Dialog Get Pro] Response status:', response.status);
+        
+        if (!response.ok) {
+          let errorMessage = `Server error: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            console.error('[Info Dialog Get Pro] Error response:', errorData);
+            errorMessage = errorData.message || errorData.error || errorMessage;
+          } catch (parseError) {
+            const text = await response.text().catch(() => '');
+            console.error('[Info Dialog Get Pro] Non-JSON error response:', text);
+            errorMessage = text || errorMessage;
+          }
+          throw new Error(errorMessage);
+        }
+
+        const data = await response.json();
+        console.log('[Info Dialog Get Pro] Checkout session created:', data);
+        
+        if (data.url) {
+          window.open(data.url, '_blank');
+          // Reset button after successful checkout session creation
+          infoDialogGetProBtn.disabled = false;
+          infoDialogGetProBtn.textContent = originalText;
+          infoDialog.close();
+        } else {
+          console.warn('[Info Dialog Get Pro] No checkout URL in response:', data);
+          alert('Upgrade feature coming soon!');
+          infoDialogGetProBtn.disabled = false;
+          infoDialogGetProBtn.textContent = originalText;
+        }
+      } catch (error) {
+        console.error('[Info Dialog Get Pro] Error details:', error);
+        const errorMessage = error.message || 'Unknown error occurred';
+        alert(`Failed to initiate upgrade: ${errorMessage}`);
+        infoDialogGetProBtn.disabled = false;
+        infoDialogGetProBtn.textContent = originalText;
+      }
+    });
+  }
 
   // Function to format duration in MM:SS or HH:MM:SS
   function formatDuration(seconds) {
@@ -775,6 +1068,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Show and initialize questions section
         if (chatMessages) {
           chatMessages.innerHTML = '';
+          playfulMessageShown = false;
+          showPlayfulMessage();
         }
         
         // Don't auto-generate quiz - user must click "Make Test" button
@@ -956,7 +1251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.SettingsPanel.initializeSettings();
       window.SettingsPanel.registerSettingsHandlers();
     } else {
-      console.warn('[SumVid] SettingsPanel module not loaded');
+      console.warn('[Eureka AI] SettingsPanel module not loaded');
     }
     if (window.LoginMenu) {
       window.LoginMenu.initializeLoginMenu();
@@ -964,27 +1259,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       moduleRetryCount++;
       if (moduleRetryCount < MAX_MODULE_RETRIES) {
-        console.warn(`[SumVid] LoginMenu module not loaded, retrying... (${moduleRetryCount}/${MAX_MODULE_RETRIES})`);
+        console.warn(`[Eureka AI] LoginMenu module not loaded, retrying... (${moduleRetryCount}/${MAX_MODULE_RETRIES})`);
         setTimeout(initializeModules, 200);
         return;
       } else {
-        console.error('[SumVid] LoginMenu module failed to load after max retries');
+        console.error('[Eureka AI] LoginMenu module failed to load after max retries');
       }
     }
     if (!window.UsageTracker) {
-      console.warn('[SumVid] UsageTracker module not loaded');
+      console.warn('[Eureka AI] UsageTracker module not loaded');
     }
     if (window.SumVidNotesManager) {
       window.SumVidNotesManager.init();
       initializeNotesUI();
     } else {
-      console.warn('[SumVid] SumVidNotesManager module not loaded');
+      console.warn('[Eureka AI] SumVidNotesManager module not loaded');
     }
     if (window.SumVidFlashcardMaker) {
       window.SumVidFlashcardMaker.init();
       initializeFlashcardUI();
     } else {
-      console.warn('[SumVid] SumVidFlashcardMaker module not loaded');
+      console.warn('[Eureka AI] SumVidFlashcardMaker module not loaded');
     }
   }
   
@@ -993,7 +1288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const generateFlashcardButton = document.getElementById('generate-flashcard-button');
     
     if (!flashcardContainer || !generateFlashcardButton) {
-      console.warn('[SumVid] Flashcard UI elements not found');
+      console.warn('[Eureka AI] Flashcard UI elements not found');
       return;
     }
     
@@ -1083,7 +1378,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       await updateStatusCards();
     } catch (error) {
-      console.error('[SumVid] Flashcard generation error:', error);
+      console.error('[Eureka AI] Flashcard generation error:', error);
       alert('Failed to generate flashcards. Please try again.');
       if (flashcardList) {
         flashcardList.innerHTML = '<p style="text-align: center; padding: 20px; color: #e74c3c;">Failed to generate flashcards.</p>';
@@ -1258,7 +1553,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const noteContentInput = document.getElementById('note-content');
     
     if (!notesContainer || !notesList || !createNoteButton) {
-      console.warn('[SumVid] Notes UI elements not found');
+      console.warn('[Eureka AI] Notes UI elements not found');
       return;
     }
     
@@ -1392,7 +1687,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
       } catch (error) {
-        console.warn('[SumVid] Failed to check usage limit from backend, using local storage fallback:', error);
+        console.warn('[Eureka AI] Failed to check usage limit from backend, using local storage fallback:', error);
         // Fallback to local storage if backend is not available
         if (window.UsageTracker) {
           const limitReached = await window.UsageTracker.isLimitReached();
@@ -1425,7 +1720,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         await updateStatusCards();
       } catch (error) {
-        console.error('[SumVid] Error generating flashcards from note:', error);
+        console.error('[Eureka AI] Error generating flashcards from note:', error);
         alert('Failed to generate flashcards. Please try again.');
       }
     }
@@ -1514,8 +1809,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Initialize usage tracking and update status cards
   async function updateStatusCards() {
-    const enhancementsCountEl = document.getElementById('enhancements-count');
-    const enhancementsLimitEl = document.getElementById('enhancements-limit');
+    // Update cards in account dialog
+    const enhancementsCountEl = document.getElementById('account-enhancements-count');
+    const enhancementsLimitEl = document.getElementById('account-enhancements-limit');
+    const userStatusEl = document.getElementById('account-user-status');
+    const userPlanEl = document.getElementById('account-user-plan');
     
     try {
       // Try to get usage from backend API if user is logged in
@@ -1546,7 +1844,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
       } catch (error) {
-        console.warn('[SumVid] Failed to get usage from backend:', error);
+        console.warn('[Eureka AI] Failed to get usage from backend:', error);
       }
       
       // Fallback to local storage if backend is not available or user is not logged in
@@ -1569,6 +1867,47 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       if (enhancementsCountEl) enhancementsCountEl.textContent = usage.enhancementsUsed;
       if (enhancementsLimitEl) enhancementsLimitEl.textContent = usage.enhancementsLimit;
+      
+      // Update user status and plan in account dialog
+      const storedToken = await chrome.storage.local.get(['sumvid_auth_token']);
+      const authToken = storedToken.sumvid_auth_token;
+      
+      if (authToken) {
+        try {
+          const profileResponse = await fetch(`${BACKEND_URL}/api/user/profile`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${authToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (profileResponse.ok) {
+            const profileData = await profileResponse.json();
+            const userProfile = profileData.user || profileData;
+            const displayName = (userProfile.name && userProfile.name.trim()) 
+              ? userProfile.name 
+              : (userProfile.email || 'User');
+            const subscriptionStatus = userProfile.subscription_status || 'freemium';
+            
+            if (userStatusEl) {
+              userStatusEl.textContent = displayName;
+            }
+            if (userPlanEl) {
+              userPlanEl.textContent = subscriptionStatus === 'premium' ? 'PRO' : 'Freemium';
+            }
+          }
+        } catch (error) {
+          console.warn('[Eureka AI] Failed to get user profile:', error);
+        }
+      } else {
+        if (userStatusEl) {
+          userStatusEl.textContent = 'Not Logged In';
+        }
+        if (userPlanEl) {
+          userPlanEl.textContent = 'Freemium';
+        }
+      }
       
       // Update button states based on usage
       const summarizeButton = document.getElementById('summarize-button');
@@ -1618,7 +1957,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     } catch (error) {
-      console.warn('[SumVid] Failed to check usage limit from backend:', error);
+      console.warn('[Eureka AI] Failed to check usage limit from backend:', error);
     }
     
     // Fallback to local storage if backend is not available
@@ -1720,7 +2059,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
       } catch (error) {
-        console.warn('[SumVid] Failed to check usage limit from backend, using local storage fallback:', error);
+        console.warn('[Eureka AI] Failed to check usage limit from backend, using local storage fallback:', error);
         // Fallback to local storage if backend is not available
         if (window.UsageTracker) {
           const limitReached = await window.UsageTracker.isLimitReached();
@@ -1816,7 +2155,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
       } catch (error) {
-        console.warn('[SumVid] Failed to check usage limit from backend, using local storage fallback:', error);
+        console.warn('[Eureka AI] Failed to check usage limit from backend, using local storage fallback:', error);
         // Fallback to local storage if backend is not available
         if (window.UsageTracker) {
           const limitReached = await window.UsageTracker.isLimitReached();
@@ -1936,6 +2275,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Clear chat if no cached content
       if (chatMessages) {
         chatMessages.innerHTML = '';
+        playfulMessageShown = false;
+        showPlayfulMessage();
       }
     }
     
@@ -1976,10 +2317,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await updateStatusCards();
     
     // Show status section
-    const statusSection = document.getElementById('status-section');
-    if (statusSection) {
-      statusSection.style.display = 'flex';
-    }
+    // Status cards are now in account dialog, no need to show status section
     
     showState(videoInfoState);
     // Ensure event listeners are attached after DOM is updated
@@ -1991,6 +2329,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!contentInfo) {
       // No content info, but don't show error state - show interface anyway
       showState(videoInfoState);
+      if (chatMessages && chatMessages.children.length === 0) {
+        showPlayfulMessage();
+      }
       return;
     }
     
@@ -2046,11 +2387,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     summaryContainer?.classList.add('hidden');
     quizContainer?.classList.add('hidden');
     
-    // Show status section when content info is displayed
-    const statusSection = document.getElementById('status-section');
-    if (statusSection) {
-      statusSection.style.display = 'flex';
-    }
+    // Status cards are now in account dialog, no need to show status section
     
     // Show containers if we have content (transcript for video, text for webpage/PDF)
     const hasContent = contentInfo.transcript || contentInfo.text || contentInfo.needsServerExtraction;
@@ -2064,6 +2401,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     showState(videoInfoState);
+    // Show playful message if chat is empty
+    if (chatMessages && chatMessages.children.length === 0) {
+      showPlayfulMessage();
+    }
     // Ensure event listeners are attached after DOM is updated
     setTimeout(ensureEventListeners, 100);
   }
@@ -2081,6 +2422,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       const newVideoInfo = changes.currentVideoInfo.newValue;
       displayVideoInfo(newVideoInfo);
     }
+
+    // Note: clarify requests are now handled by the message listener
+    // This storage listener is disabled to prevent duplicate messages
+    // The background script sends a direct message instead
+    // if (changes.clarifyRequest?.newValue) {
+    //   // Disabled to prevent duplicate message handling
+    // }
   });
   
   // Regenerate quiz button handler
@@ -2296,7 +2644,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           // Note: Usage is tracked and incremented on the backend API
             userContext.summary = summaryContextInput.value;
           await summarizeText(currentVideoInfo.transcript, true, summaryContextInput.value);
-            if (chatMessages) chatMessages.innerHTML = '';
+            if (chatMessages) {
+              chatMessages.innerHTML = '';
+              playfulMessageShown = false;
+              showPlayfulMessage();
+            }
           await updateStatusCards();
           };
           summaryContextSubmit.onclick = submitContext;
@@ -2328,7 +2680,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Note: Usage is tracked and incremented on the backend API
         userContext.summary = '';
       await summarizeText(currentVideoInfo.transcript, true, '');
-        if (chatMessages) chatMessages.innerHTML = '';
+        if (chatMessages) {
+          chatMessages.innerHTML = '';
+          playfulMessageShown = false;
+          showPlayfulMessage();
+        }
       await updateStatusCards();
     });
   } else {
@@ -2391,4 +2747,102 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
   }
+
+  // Listen for selection-clarify messages from content scripts
+  let isProcessingClarify = false; // Prevent duplicate processing
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'selection-clarify') {
+      // Prevent duplicate processing
+      if (isProcessingClarify) {
+        console.warn('[Eureka AI] Clarify request already being processed');
+        sendResponse({ success: false, error: 'Already processing' });
+        return false;
+      }
+      
+      isProcessingClarify = true;
+      
+      (async () => {
+        try {
+          // Get current content info for context
+          const stored = await chrome.storage.local.get(['currentContentInfo', 'clarifyRequest']);
+          const contentInfo = stored.currentContentInfo || currentVideoInfo;
+          const clarifyRequest = stored.clarifyRequest;
+          
+          // Use text from message or from stored clarifyRequest
+          const textToClarify = message.text || (clarifyRequest?.text);
+          
+          if (!textToClarify) {
+            console.warn('[Eureka AI] No text to clarify');
+            isProcessingClarify = false;
+            sendResponse({ success: false, error: 'No text provided' });
+            return;
+          }
+          
+          // Build system prompt with context (not shown to user)
+          let systemPrompt = `Please clarify the following text in the context of the current webpage:\n\n"${textToClarify}"\n\n`;
+          
+          // Get content info for context
+          const contentType = contentInfo?.type || 'webpage';
+          const contentText = contentType === 'video' 
+            ? (contentInfo?.transcript || '')
+            : (contentInfo?.text || '');
+          
+          if (contentText) {
+            // Include a snippet of the webpage content for context (in system prompt only)
+            const contextSnippet = contentText.substring(0, 2000); // First 2000 chars for context
+            systemPrompt += `Here is the context from the ${contentType}:\n\n${contextSnippet}`;
+          }
+          
+          // Show only the user's actual question to the chat UI
+          const userMessage = `Clarify this for me: "${textToClarify}"`;
+          if (chatMessages) {
+            addChatMessage(userMessage, true); // true = isUser
+          }
+          
+          // Clear input
+          if (questionInput) {
+            questionInput.value = '';
+          }
+          
+          // Send system prompt to backend via background script (which handles context automatically)
+          // The system prompt includes context but won't be shown to user
+          const response = await chrome.runtime.sendMessage({
+            action: 'sidechat',
+            message: systemPrompt,
+            chatHistory: [],
+            context: contentText ? contentText.substring(0, 5000) : '' // Include context for clarification
+          });
+          
+          if (response?.error) {
+            addChatMessage(`Error: ${response.error}`, false); // false = assistant
+          } else if (response?.reply) {
+            addChatMessage(response.reply, false); // false = assistant
+          } else {
+            addChatMessage('I apologize, but I was unable to clarify that text. Please try again.', false); // false = assistant
+          }
+          
+          // Clear the clarify request from storage
+          chrome.storage.local.remove(['clarifyRequest']);
+          
+          // Update status cards
+          await updateStatusCards();
+          
+          isProcessingClarify = false;
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error('[Eureka AI] Error handling selection-clarify:', error);
+          if (chatMessages) {
+            addChatMessage(`Error: ${error.message}`, false); // false = assistant
+          }
+          isProcessingClarify = false;
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // Indicate that sendResponse will be called asynchronously
+    }
+    return false;
+  });
+  
+  // Note: clarify requests are now handled by the message listener above
+  // No need to check on load as the background script sends the message directly
 });

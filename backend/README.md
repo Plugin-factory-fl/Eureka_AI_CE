@@ -1,6 +1,6 @@
-# SumVid Learn Backend Server
+# Eureka AI Backend Server
 
-Backend server for the SumVid Learn Chrome extension, handling authentication, API key management, and payment verification.
+Backend server for the Eureka AI Chrome extension, handling authentication, API key management, and payment verification.
 
 ## Features
 

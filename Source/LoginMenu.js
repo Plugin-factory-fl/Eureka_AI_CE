@@ -268,12 +268,16 @@ async function updateLoggedInView() {
     loginView.style.display = 'none';
     
     const userNameEl = document.getElementById('account-user-name');
+    const userEmailEl = document.getElementById('account-user-email');
     const planNameEl = document.getElementById('account-plan-name');
     const displayName = (userProfile.name && userProfile.name.trim()) 
       ? userProfile.name 
       : (userProfile.email || 'User');
     if (userNameEl) {
       userNameEl.textContent = displayName;
+    }
+    if (userEmailEl && userProfile.email) {
+      userEmailEl.textContent = `(${userProfile.email})`;
     }
     
     const subscriptionStatus = userProfile.subscription_status || 'freemium';
@@ -295,12 +299,12 @@ async function updateLoggedInView() {
 }
 
 /**
- * Updates status card with user info
+ * Updates status card with user info (in account dialog)
  */
 async function updateStatusCard() {
   const userProfile = await getUserProfile();
-  const userStatusEl = document.getElementById('user-status');
-  const userPlanEl = document.getElementById('user-plan');
+  const userStatusEl = document.getElementById('account-user-status');
+  const userPlanEl = document.getElementById('account-user-plan');
   const crownIcon = document.getElementById('account-crown-icon');
 
   if (userProfile) {
@@ -424,6 +428,71 @@ function registerAccountHandlers() {
         console.error('[Upgrade] Error details:', error);
         const errorMessage = error.message || 'Unknown error occurred';
         alert(`Failed to initiate upgrade: ${errorMessage}`);
+      }
+    });
+  }
+
+  // Handle Get Pro button (in status section)
+  const getProButton = document.getElementById('get-pro-button');
+  if (getProButton) {
+    getProButton.addEventListener('click', async () => {
+      const token = await getAuthToken();
+      if (!token) {
+        alert('Please log in to upgrade to Pro');
+        return;
+      }
+
+      // Disable button to prevent double-clicks
+      getProButton.disabled = true;
+      const originalText = getProButton.textContent;
+      getProButton.textContent = 'Loading...';
+
+      try {
+        console.log('[Get Pro] Creating checkout session...');
+        const response = await fetch(`${BACKEND_URL}/api/checkout/create-session`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+        });
+
+        console.log('[Get Pro] Response status:', response.status);
+        
+        if (!response.ok) {
+          let errorMessage = `Server error: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            console.error('[Get Pro] Error response:', errorData);
+            errorMessage = errorData.message || errorData.error || errorMessage;
+          } catch (parseError) {
+            const text = await response.text().catch(() => '');
+            console.error('[Get Pro] Non-JSON error response:', text);
+            errorMessage = text || errorMessage;
+          }
+          throw new Error(errorMessage);
+        }
+
+        const data = await response.json();
+        console.log('[Get Pro] Checkout session created:', data);
+        
+        if (data.url) {
+          window.open(data.url, '_blank');
+          // Reset button after successful checkout session creation
+          getProButton.disabled = false;
+          getProButton.textContent = originalText;
+        } else {
+          console.warn('[Get Pro] No checkout URL in response:', data);
+          alert('Upgrade feature coming soon!');
+          getProButton.disabled = false;
+          getProButton.textContent = originalText;
+        }
+      } catch (error) {
+        console.error('[Get Pro] Error details:', error);
+        const errorMessage = error.message || 'Unknown error occurred';
+        alert(`Failed to initiate upgrade: ${errorMessage}`);
+        getProButton.disabled = false;
+        getProButton.textContent = originalText;
       }
     });
   }

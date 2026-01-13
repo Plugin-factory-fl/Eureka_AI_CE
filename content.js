@@ -199,7 +199,7 @@ function detectContentType() {
       canSummarize: true
     };
   } catch (error) {
-    console.error('[SumVid] Error detecting content type:', error);
+    console.error('[Eureka AI] Error detecting content type:', error);
     return null;
   }
 }
@@ -237,11 +237,11 @@ function extractWebpageText() {
       .trim();
     
     // Log extraction for debugging
-    console.log('[SumVid] Extracted webpage text length:', content.length);
+    console.log('[Eureka AI] Extracted webpage text length:', content.length);
     
     return content;
   } catch (error) {
-    console.error('[SumVid] Error extracting webpage text:', error);
+    console.error('[Eureka AI] Error extracting webpage text:', error);
     return '';
   }
 }
@@ -299,7 +299,7 @@ async function extractChromePDFViewer() {
       needsServerExtraction: true
     };
   } catch (error) {
-    console.error('[SumVid] Error extracting Chrome PDF viewer:', error);
+    console.error('[Eureka AI] Error extracting Chrome PDF viewer:', error);
     throw error;
   }
 }
@@ -340,7 +340,7 @@ async function extractPDFjsText() {
     
     return text;
   } catch (error) {
-    console.error('[SumVid] Error extracting PDF.js text:', error);
+    console.error('[Eureka AI] Error extracting PDF.js text:', error);
     throw error;
   }
 }
@@ -360,21 +360,21 @@ function getPDFUrl() {
 // Function to send content info to background script (universal: video, webpage, PDF)
 async function sendContentInfo() {
   if (isProcessing) {
-    console.log('[SumVid] Already processing content info, queuing...');
+    console.log('[Eureka AI] Already processing content info, queuing...');
     messageQueue.push({ type: 'send_content_info' });
     return;
   }
 
   try {
     isProcessing = true;
-    console.log('[SumVid] Detecting content type...');
+    console.log('[Eureka AI] Detecting content type...');
 
     const contentType = detectContentType();
     if (!contentType) {
       throw new Error('Failed to detect content type');
     }
 
-    console.log('[SumVid] Content type detected:', contentType.type);
+    console.log('[Eureka AI] Content type detected:', contentType.type);
 
     let contentData = {
       ...contentType,
@@ -394,7 +394,7 @@ async function sendContentInfo() {
         throw new Error('Failed to extract basic video info');
       }
 
-      console.log('[SumVid] Basic video info extracted, now getting transcript...');
+      console.log('[Eureka AI] Basic video info extracted, now getting transcript...');
       const transcriptData = await extractTranscript();
 
       contentData = {
@@ -405,13 +405,13 @@ async function sendContentInfo() {
     } else if (contentType.type === 'pdf') {
       // PDF content
       if (isChromePDFViewer()) {
-        console.log('[SumVid] Detected Chrome PDF viewer');
+        console.log('[Eureka AI] Detected Chrome PDF viewer');
         const pdfInfo = await extractChromePDFViewer();
         contentData = { ...contentData, ...pdfInfo };
         // Chrome PDF viewer needs server-side extraction
         contentData.needsServerExtraction = true;
       } else if (isPDFjs()) {
-        console.log('[SumVid] Detected PDF.js viewer');
+        console.log('[Eureka AI] Detected PDF.js viewer');
         const pdfText = await extractPDFjsText();
         contentData.text = pdfText;
         contentData.pdfUrl = getPDFUrl();
@@ -420,7 +420,7 @@ async function sendContentInfo() {
       }
     } else if (contentType.type === 'webpage') {
       // Webpage content
-      console.log('[SumVid] Extracting webpage text...');
+      console.log('[Eureka AI] Extracting webpage text...');
       const webpageText = extractWebpageText();
       const metadata = getWebpageMetadata();
       
@@ -431,7 +431,7 @@ async function sendContentInfo() {
       };
     }
 
-    console.log('[SumVid] Content extracted, sending to background script.');
+    console.log('[Eureka AI] Content extracted, sending to background script.');
     
     const response = await sendMessageWithTimeout({
       type: 'CONTENT_INFO',
@@ -439,12 +439,12 @@ async function sendContentInfo() {
     });
 
     if (response?.error) {
-      console.warn('[SumVid] Warning sending content info:', response.error);
+      console.warn('[Eureka AI] Warning sending content info:', response.error);
     } else {
-      console.log('[SumVid] Content info sent successfully');
+      console.log('[Eureka AI] Content info sent successfully');
     }
   } catch (error) {
-    console.error('[SumVid] Error in sendContentInfo:', error.message || error);
+    console.error('[Eureka AI] Error in sendContentInfo:', error.message || error);
   } finally {
     isProcessing = false;
     processNextMessage();
@@ -466,7 +466,25 @@ function processNextMessage() {
 }
 
 // Initialize content script - send content info for all pages
-console.log('[SumVid] Content script initialized');
+console.log('[Eureka AI] Content script initialized');
+
+// Initialize sticky button on all pages
+// StickyButton.js is now loaded as a content script, so it should auto-initialize
+// But we'll also try to initialize it here as a fallback
+if (typeof window.EurekaAIStickyButton !== 'undefined') {
+  window.EurekaAIStickyButton.init();
+} else {
+  // Wait for StickyButton to load (it's in content_scripts, so should be available)
+  const checkStickyButton = setInterval(() => {
+    if (typeof window.EurekaAIStickyButton !== 'undefined') {
+      window.EurekaAIStickyButton.init();
+      clearInterval(checkStickyButton);
+    }
+  }, 100);
+  
+  // Stop checking after 5 seconds
+  setTimeout(() => clearInterval(checkStickyButton), 5000);
+}
 
 // Send content info for current page
 sendContentInfo();
@@ -477,7 +495,7 @@ const observer = new MutationObserver(() => {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
-    console.log('[SumVid] URL changed, updating content info...');
+    console.log('[Eureka AI] URL changed, updating content info...');
     setTimeout(sendContentInfo, 2000);
   }
 });

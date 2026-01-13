@@ -164,10 +164,20 @@
   font-size: 14px;
   color: #ffffff;
   line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .account__logged-in-as span {
   font-weight: 600;
+}
+
+.account__user-email {
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 2px;
 }
 
 .account__switch-link {
@@ -278,6 +288,10 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
+[data-theme="dark"] .account-dialog .modal__content {
+  background: #2d2d2d;
+}
+
 .account-dialog .modal__header {
   display: flex;
   align-items: center;
@@ -287,6 +301,11 @@
   background: #ffffff;
 }
 
+[data-theme="dark"] .account-dialog .modal__header {
+  background: #2d2d2d;
+  border-bottom-color: #404040;
+}
+
 .account-dialog .modal__header h2 {
   margin: 0;
   font-size: 18px;
@@ -294,10 +313,18 @@
   color: #333333;
 }
 
+[data-theme="dark"] .account-dialog .modal__header h2 {
+  color: #ffffff;
+}
+
 .account-dialog .modal__body {
   padding: 24px;
   overflow-y: auto;
   background: #ffffff;
+}
+
+[data-theme="dark"] .account-dialog .modal__body {
+  background: #2d2d2d;
 }
 
 .account-dialog .modal__close {
@@ -347,6 +374,10 @@
   margin-bottom: 4px;
 }
 
+[data-theme="dark"] .account-dialog .form-field__label {
+  color: #ffffff;
+}
+
 .account-dialog .account__body {
   background: #ffffff;
 }
@@ -364,6 +395,12 @@
   margin-top: 4px;
   margin-bottom: 4px;
   box-shadow: none;
+}
+
+[data-theme="dark"] .account-dialog .account__input {
+  background: #3d3d3d;
+  color: #ffffff;
+  border-color: #404040;
 }
 
 .account-dialog .account__input:focus {
@@ -445,14 +482,52 @@
   background: #ffffff;
 }
 
+[data-theme="dark"] .account-dialog .account__logged-in-body {
+  background: #2d2d2d;
+}
+
 .account-dialog .account__logged-in-as {
   color: #333333;
+}
+
+[data-theme="dark"] .account-dialog .account__logged-in-as {
+  color: #ffffff;
+}
+
+.account-dialog .account__user-email {
+  color: #666666;
+}
+
+[data-theme="dark"] .account-dialog .account__user-email {
+  color: #cccccc;
+}
+
+.account__status-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.account__status-cards .status-card {
+  background: var(--color-surface-alt, #f1f5f9);
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border, rgba(148, 163, 184, 0.28));
 }
 
 .account-dialog .account__plan-label {
   color: #333333;
 }
 
+[data-theme="dark"] .account-dialog .account__plan-label {
+  color: #ffffff;
+}
+
 .account-dialog .account__plan-description {
   color: #666666;
+}
+
+[data-theme="dark"] .account-dialog .account__plan-description {
+  color: #cccccc;
 }

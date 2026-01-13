@@ -14,7 +14,7 @@
    */
   async function initNotesManager() {
     await loadNotes();
-    console.log('[SumVid] NotesManager initialized');
+    console.log('[Eureka AI] NotesManager initialized');
   }
 
   /**
@@ -25,7 +25,7 @@
       const result = await chrome.storage.local.get([STORAGE_KEY]);
       notes = result[STORAGE_KEY] || [];
     } catch (error) {
-      console.error('[SumVid] Error loading notes:', error);
+      console.error('[Eureka AI] Error loading notes:', error);
       notes = [];
     }
   }
@@ -37,7 +37,7 @@
     try {
       await chrome.storage.local.set({ [STORAGE_KEY]: notes });
     } catch (error) {
-      console.error('[SumVid] Error saving notes:', error);
+      console.error('[Eureka AI] Error saving notes:', error);
     }
   }
 

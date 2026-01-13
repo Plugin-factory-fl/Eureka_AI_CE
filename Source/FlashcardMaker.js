@@ -14,7 +14,7 @@
    */
   async function initFlashcardMaker() {
     await loadFlashcards();
-    console.log('[SumVid] FlashcardMaker initialized');
+    console.log('[Eureka AI] FlashcardMaker initialized');
   }
 
   /**
@@ -25,7 +25,7 @@
       const result = await chrome.storage.local.get([STORAGE_KEY]);
       flashcards = result[STORAGE_KEY] || [];
     } catch (error) {
-      console.error('[SumVid] Error loading flashcards:', error);
+      console.error('[Eureka AI] Error loading flashcards:', error);
       flashcards = [];
     }
   }
@@ -37,7 +37,7 @@
     try {
       await chrome.storage.local.set({ [STORAGE_KEY]: flashcards });
     } catch (error) {
-      console.error('[SumVid] Error saving flashcards:', error);
+      console.error('[Eureka AI] Error saving flashcards:', error);
     }
   }
 

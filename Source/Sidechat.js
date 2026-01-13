@@ -19,7 +19,7 @@
     const sidechatSend = document.getElementById('sidechat-send');
 
     if (!sidechatSection || !sidechatMessages || !sidechatInput || !sidechatSend) {
-      console.warn('[SumVid] Sidechat elements not found');
+      console.warn('[Eureka AI] Sidechat elements not found');
       return;
     }
 
@@ -37,7 +37,7 @@
     // Load chat history from storage
     loadChatHistory();
 
-    console.log('[SumVid] Sidechat initialized');
+    console.log('[Eureka AI] Sidechat initialized');
   }
 
   /**
@@ -76,7 +76,7 @@
         saveChatHistory();
       }
     } catch (error) {
-      console.error('[SumVid] Sidechat error:', error);
+      console.error('[Eureka AI] Sidechat error:', error);
       addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
     } finally {
       isProcessing = false;
@@ -105,7 +105,7 @@
     try {
       await chrome.storage.local.set({ sumvid_sidechat_history: chatHistory });
     } catch (error) {
-      console.error('[SumVid] Error saving sidechat history:', error);
+      console.error('[Eureka AI] Error saving sidechat history:', error);
     }
   }
 
@@ -128,7 +128,7 @@
         }
       }
     } catch (error) {
-      console.error('[SumVid] Error loading sidechat history:', error);
+      console.error('[Eureka AI] Error loading sidechat history:', error);
     }
   }
 

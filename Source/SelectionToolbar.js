@@ -7,7 +7,7 @@
 (function() {
   'use strict';
 
-  const TOOLBAR_ID = 'sumvid-selection-toolbar';
+  const TOOLBAR_ID = 'eureka-ai-selection-toolbar';
   const TOOLBAR_VISIBLE_CLASS = 'is-visible';
   let toolbarElement = null;
   let selectedText = '';
@@ -23,7 +23,7 @@
     // Hide toolbar when clicking outside
     document.addEventListener('click', handleDocumentClick, true);
     
-    console.log('[SumVid] Selection toolbar initialized');
+    console.log('[Eureka AI] Selection toolbar initialized');
   }
 
   /**
@@ -39,6 +39,20 @@
     });
   }
 
+  // Add scroll listener to update toolbar position when scrolling
+  let scrollTimeout = null;
+  document.addEventListener('scroll', () => {
+    if (scrollTimeout) {
+      clearTimeout(scrollTimeout);
+    }
+    scrollTimeout = setTimeout(() => {
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed && selection.toString().trim()) {
+        updateSelectionToolbar();
+      }
+    }, 100);
+  }, true);
+
   /**
    * Updates the selection toolbar visibility and position
    */
@@ -51,15 +65,27 @@
       return;
     }
 
-    // Show toolbar for webpages and PDFs (not on YouTube video pages)
-    const url = window.location.href;
-    if (url.includes('youtube.com/watch')) {
-      hideToolbar();
-      return;
-    }
+    // Show toolbar for all pages (including YouTube)
+    // Removed YouTube exclusion - toolbar should work everywhere
 
     selectedText = text;
     showToolbar(selection);
+  }
+
+  /**
+   * Gets the bounding rectangle of the selection
+   */
+  function getSelectionRect(selection) {
+    if (!selection?.rangeCount) return null;
+    try {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      if (rect?.width || rect?.height) return rect;
+      const rects = range.getClientRects();
+      return rects[0] || null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -70,16 +96,66 @@
       ensureToolbar();
     }
 
-    if (!toolbarElement) return;
+    if (!toolbarElement) {
+      console.error('[Eureka AI] Failed to create selection toolbar');
+      return;
+    }
 
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
+    const rangeRect = getSelectionRect(selection);
+    if (!rangeRect) {
+      hideToolbar();
+      return;
+    }
 
-    // Position toolbar above selection
-    toolbarElement.style.top = `${rect.top + window.scrollY - 50}px`;
-    toolbarElement.style.left = `${rect.left + window.scrollX + rect.width / 2}px`;
-    toolbarElement.style.transform = 'translateX(-50%)';
+    // Hide toolbar first to measure it accurately
+    toolbarElement.classList.remove(TOOLBAR_VISIBLE_CLASS);
+    toolbarElement.style.position = 'fixed';
+    toolbarElement.style.left = '-9999px';
+    toolbarElement.style.top = '0';
+    toolbarElement.style.transform = 'translate(-50%, 0)';
+    toolbarElement.style.opacity = '0';
+    toolbarElement.style.pointerEvents = 'none';
+    toolbarElement.style.display = 'flex';
 
+    // Force reflows for accurate measurement
+    void toolbarElement.offsetWidth;
+    void toolbarElement.offsetHeight;
+
+    let w = toolbarElement.offsetWidth;
+    let h = toolbarElement.offsetHeight;
+
+    if (!w || !h) {
+      void toolbarElement.offsetWidth;
+      w = toolbarElement.offsetWidth;
+      h = toolbarElement.offsetHeight;
+      if (!w || !h) {
+        console.error('[Eureka AI] Toolbar dimensions invalid, cannot position');
+        return;
+      }
+    }
+
+    const { clientWidth: vw, clientHeight: vh } = document.documentElement;
+    const selectionCenterX = rangeRect.left + rangeRect.width / 2;
+    const selectionBottom = rangeRect.bottom;
+
+    // Position toolbar BELOW selection (like PromptProfile)
+    let left = Math.max(w / 2 + 8, Math.min(vw - w / 2 - 8, selectionCenterX));
+    let top = selectionBottom + 8;
+
+    // Check if toolbar would go off-screen at bottom
+    const maxTop = vh - h - 8;
+    if (top > maxTop) {
+      // Position above selection instead
+      top = Math.max(8, rangeRect.top - h - 8);
+      toolbarElement.style.transform = 'translate(-50%, -100%)';
+    } else {
+      toolbarElement.style.transform = 'translate(-50%, 0)';
+    }
+
+    toolbarElement.style.left = `${Math.round(left)}px`;
+    toolbarElement.style.top = `${Math.round(top)}px`;
+    toolbarElement.style.opacity = '';
+    toolbarElement.style.pointerEvents = '';
     toolbarElement.classList.add(TOOLBAR_VISIBLE_CLASS);
   }
 
@@ -94,13 +170,11 @@
   }
 
   /**
-   * Handles document clicks (hide toolbar if clicking outside)
+   * Handles document clicks - don't auto-hide, only hide if clicking dismiss button
    */
   function handleDocumentClick(event) {
-    if (toolbarElement && toolbarElement.contains(event.target)) {
-      return; // Clicked inside toolbar
-    }
-    hideToolbar();
+    // Don't auto-hide on clicks - toolbar stays visible until dismissed
+    // Only hide if clicking the dismiss button (handled in ensureToolbar)
   }
 
   /**
@@ -114,48 +188,33 @@
     toolbarElement = document.createElement('div');
     toolbarElement.id = TOOLBAR_ID;
 
-    // Create dropdown button
-    const dropdownButton = document.createElement('button');
-    dropdownButton.className = 'sumvid-selection-toolbar__button';
-    dropdownButton.textContent = 'SumVid Actions';
-    dropdownButton.addEventListener('click', (e) => {
+    // Create dismiss button (X)
+    const dismissButton = document.createElement('button');
+    dismissButton.className = 'eureka-ai-selection-toolbar__dismiss';
+    dismissButton.innerHTML = '×';
+    dismissButton.setAttribute('aria-label', 'Dismiss');
+    dismissButton.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      toggleDropdown();
+      hideToolbar();
     });
 
-    // Create dropdown menu
-    const dropdown = document.createElement('div');
-    dropdown.className = 'sumvid-selection-toolbar__dropdown';
-    
-    // Action buttons
-    const actions = [
-      { id: 'explain', text: "Explain this like I'm 16" },
-      { id: 'summarize', text: 'Summarize this paragraph' },
-      { id: 'flashcard', text: 'Turn into flashcard' },
-      { id: 'notes', text: 'Add to Notes' }
-    ];
-
-    actions.forEach(action => {
-      const button = document.createElement('button');
-      button.className = 'sumvid-selection-toolbar__action';
-      button.dataset.action = action.id;
-      button.textContent = action.text;
-      button.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleAction(action.id);
-        hideToolbar();
-        dropdown.classList.remove('is-visible');
-      });
-      dropdown.appendChild(button);
+    // Create Clarify button
+    const clarifyButton = document.createElement('button');
+    clarifyButton.className = 'eureka-ai-selection-toolbar__button';
+    clarifyButton.textContent = 'Clarify';
+    clarifyButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleClarify();
+      hideToolbar();
     });
 
-    toolbarElement.appendChild(dropdownButton);
-    toolbarElement.appendChild(dropdown);
+    toolbarElement.appendChild(dismissButton);
+    toolbarElement.appendChild(clarifyButton);
 
     if (!document.body) {
-      console.error('[SumVid] Cannot create selection toolbar: document.body not available');
+      console.error('[Eureka AI] Cannot create selection toolbar: document.body not available');
       return null;
     }
 
@@ -164,94 +223,32 @@
   }
 
   /**
-   * Toggles the dropdown menu
+   * Handles Clarify action - opens sidebar and sends message to sidechat
    */
-  function toggleDropdown() {
-    const toolbar = document.getElementById(TOOLBAR_ID);
-    if (!toolbar) return;
-
-    const dropdown = toolbar.querySelector('.sumvid-selection-toolbar__dropdown');
-    if (dropdown) {
-      dropdown.classList.toggle('is-visible');
-      
-      // Update summarize button state
-      const summarizeButton = dropdown.querySelector('[data-action="summarize"]');
-      if (summarizeButton) {
-        // Disable if less than 1 sentence (check for sentence-ending punctuation)
-        const sentences = selectedText.match(/[.!?]+/g) || [];
-        const hasMultipleSentences = sentences.length >= 1;
-        summarizeButton.disabled = !hasMultipleSentences;
-        summarizeButton.style.opacity = hasMultipleSentences ? '1' : '0.5';
-        summarizeButton.style.cursor = hasMultipleSentences ? 'pointer' : 'not-allowed';
-      }
+  async function handleClarify() {
+    if (!selectedText) {
+      console.warn('[Eureka AI] No selected text to clarify');
+      return;
     }
-  }
-
-  /**
-   * Handles toolbar actions
-   */
-  async function handleAction(actionId) {
-    if (!selectedText) return;
 
     try {
-      switch (actionId) {
-        case 'explain':
-          await handleExplain();
-          break;
-        case 'summarize':
-          await handleSummarize();
-          break;
-        case 'flashcard':
-          await handleFlashcard();
-          break;
-        case 'notes':
-          await handleNotes();
-          break;
-      }
+      console.log('[Eureka AI] Clarify action triggered with text:', selectedText.substring(0, 50));
+      
+      // Send message to background script to open side panel and handle clarify
+      // Content scripts can't use chrome.tabs or chrome.sidePanel directly
+      chrome.runtime.sendMessage({
+        action: 'open-side-panel-and-clarify',
+        text: selectedText
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Eureka AI] Error sending clarify message:', chrome.runtime.lastError);
+        } else {
+          console.log('[Eureka AI] Clarify message sent successfully');
+        }
+      });
     } catch (error) {
-      console.error('[SumVid] Error handling action:', error);
+      console.error('[Eureka AI] Error handling clarify action:', error);
     }
-  }
-
-  /**
-   * Handles "Explain like I'm 16" action
-   */
-  async function handleExplain() {
-    // Send message to background to handle explain action
-    chrome.runtime.sendMessage({
-      action: 'selection-explain',
-      text: selectedText
-    });
-  }
-
-  /**
-   * Handles "Summarize paragraph" action
-   */
-  async function handleSummarize() {
-    chrome.runtime.sendMessage({
-      action: 'selection-summarize',
-      text: selectedText
-    });
-  }
-
-  /**
-   * Handles "Turn into flashcard" action
-   */
-  async function handleFlashcard() {
-    chrome.runtime.sendMessage({
-      action: 'selection-flashcard',
-      text: selectedText
-    });
-  }
-
-  /**
-   * Handles "Add to Notes" action
-   */
-  async function handleNotes() {
-    chrome.runtime.sendMessage({
-      action: 'selection-notes',
-      text: selectedText
-    });
   }
 
   /**
@@ -278,66 +275,56 @@
         pointer-events: auto;
       }
 
-      .sumvid-selection-toolbar__button {
-        padding: 8px 14px;
-        background: rgba(25, 118, 210, 0.95);
+      .eureka-ai-selection-toolbar__button {
+        padding: 8px 16px;
+        background: linear-gradient(135deg, #A855F7, #9333ea);
         color: #ffffff;
         border: none;
         border-radius: 8px;
-        font-size: 13px;
-        font-weight: 500;
+        font-size: 14px;
+        font-weight: 600;
         cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        transition: background-color 0.2s;
+        box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
+        transition: all 0.2s ease;
       }
 
-      .sumvid-selection-toolbar__button:hover {
-        background: rgba(21, 101, 192, 0.95);
+      .eureka-ai-selection-toolbar__button:hover {
+        background: linear-gradient(135deg, #9333ea, #7e22ce);
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(168, 85, 247, 0.4);
       }
 
-      .sumvid-selection-toolbar__dropdown {
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        margin-top: 8px;
-        background: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-        min-width: 220px;
-        display: none;
-        flex-direction: column;
-        overflow: hidden;
+      .eureka-ai-selection-toolbar__button:active {
+        transform: translateY(0);
       }
 
-      .sumvid-selection-toolbar__dropdown.is-visible {
-        display: flex;
-      }
-
-      .sumvid-selection-toolbar__action {
-        padding: 10px 14px;
-        background: transparent;
+      .eureka-ai-selection-toolbar__dismiss {
+        padding: 4px 8px;
+        background: rgba(0, 0, 0, 0.5);
+        color: #ffffff;
         border: none;
-        border-bottom: 1px solid #f0f0f0;
-        text-align: left;
-        font-size: 13px;
-        color: #333333;
+        border-radius: 50%;
+        font-size: 18px;
+        font-weight: 600;
+        line-height: 1;
         cursor: pointer;
-        transition: background-color 0.2s;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        margin-right: 4px;
+        flex-shrink: 0;
       }
 
-      .sumvid-selection-toolbar__action:last-child {
-        border-bottom: none;
+      .eureka-ai-selection-toolbar__dismiss:hover {
+        background: rgba(0, 0, 0, 0.7);
+        transform: scale(1.1);
       }
 
-      .sumvid-selection-toolbar__action:hover:not(:disabled) {
-        background: #f5f7fb;
-      }
-
-      .sumvid-selection-toolbar__action:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
+      .eureka-ai-selection-toolbar__dismiss:active {
+        transform: scale(0.95);
       }
     `;
 
@@ -346,8 +333,20 @@
 
   // Initialize when DOM is ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initSelectionToolbar);
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('[Eureka AI] DOM loaded, initializing selection toolbar');
+      initSelectionToolbar();
+    });
   } else {
+    console.log('[Eureka AI] DOM already ready, initializing selection toolbar');
     initSelectionToolbar();
   }
+
+  // Also try to initialize after a short delay as a fallback
+  setTimeout(() => {
+    if (!toolbarElement) {
+      console.log('[Eureka AI] Fallback initialization of selection toolbar');
+      initSelectionToolbar();
+    }
+  }, 1000);
 })();

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Eureka AI — Thank You</title>
+    <style>
+      :root {
+        --purple: #a855f7;
+        --purpleDark: #6d28d9;
+        --blue: #2563eb;
+        --text: #0b1220;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        color: var(--text);
+        min-height: 100vh;
+        background: linear-gradient(135deg, var(--blue) 0%, #ffffff 70%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 28px;
+      }
+      .card {
+        width: min(980px, 100%);
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(17, 24, 39, 0.12);
+        border-radius: 18px;
+        box-shadow: 0 24px 80px rgba(0,0,0,0.18);
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 22px;
+        padding: 28px;
+        align-items: start;
+      }
+      .logoWrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 140px;
+        height: 140px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, var(--purple) 0%, var(--purpleDark) 100%);
+        box-shadow: 0 10px 30px rgba(168,85,247,0.35);
+      }
+      .logo {
+        width: 84px;
+        height: 84px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.92);
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        color: var(--purpleDark);
+        letter-spacing: -0.04em;
+        font-size: 30px;
+        user-select: none;
+      }
+      h1 {
+        margin: 0 0 10px 0;
+        font-size: 32px;
+        letter-spacing: -0.03em;
+      }
+      p {
+        margin: 0 0 18px 0;
+        line-height: 1.6;
+        font-size: 16px;
+        color: rgba(11, 18, 32, 0.85);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 16px;
+        border-radius: 12px;
+        border: 0;
+        cursor: pointer;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      .btnPrimary {
+        background: linear-gradient(135deg, var(--purple) 0%, var(--purpleDark) 100%);
+        color: #fff;
+        box-shadow: 0 10px 26px rgba(109,40,217,0.22);
+      }
+      .small {
+        font-size: 12px;
+        color: rgba(11, 18, 32, 0.55);
+        margin-top: 10px;
+      }
+      @media (max-width: 720px) {
+        .card { grid-template-columns: 1fr; }
+        .logoWrap { width: 100%; height: 120px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="logoWrap">
+        <div class="logo">EA</div>
+      </div>
+      <div>
+        <h1>Thank you for subscribing!</h1>
+        <p>
+          Simply log in to your Eureka AI account using the same email you used when purchasing the subscription.
+          Your subscription and your email will be matched in our system when you log in and you'll have unlimited uses on Eureka AI.
+        </p>
+        <a class="btn btnPrimary" href="#" target="_blank" rel="noopener noreferrer">
+          Go to Chrome Web Store
+        </a>
+        <div class="small">Placeholder button — we’ll replace this with the real Chrome Web Store link.</div>
+      </div>
+    </main>
+  </body>
+</html>
+

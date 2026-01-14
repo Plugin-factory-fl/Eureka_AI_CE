@@ -49,9 +49,9 @@ router.post('/register', async (req, res) => {
     // Check if there's a Stripe customer with this email and link it
     // Wrap in try-catch to prevent Stripe errors from breaking registration
     try {
-      const linkResult = await findAndLinkStripeCustomerByEmail(user.email);
-      if (linkResult.linked) {
-        console.log(`[Auth] ${linkResult.message}`);
+    const linkResult = await findAndLinkStripeCustomerByEmail(user.email);
+    if (linkResult.linked) {
+      console.log(`[Auth] ${linkResult.message}`);
       }
     } catch (stripeError) {
       // Log but don't fail registration if Stripe linking fails
@@ -110,9 +110,9 @@ router.post('/login', async (req, res) => {
     // Check if user has a Stripe customer ID, if not, try to find and link one
     if (!user.stripe_customer_id) {
       try {
-        const linkResult = await findAndLinkStripeCustomerByEmail(user.email);
-        if (linkResult.linked) {
-          console.log(`[Auth] ${linkResult.message}`);
+      const linkResult = await findAndLinkStripeCustomerByEmail(user.email);
+      if (linkResult.linked) {
+        console.log(`[Auth] ${linkResult.message}`);
         }
       } catch (stripeError) {
         // Log but don't fail login if Stripe linking fails

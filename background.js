@@ -262,6 +262,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           contentInfo.text = sanitizeInput(message.data.text);
         }
 
+        // If PDF needs server-side extraction (Chrome PDF viewer), extract it now
+        if (contentType === 'pdf' && message.data.needsServerExtraction && message.data.pdfUrl) {
+          try {
+            console.log('[Eureka AI] Extracting PDF text from URL:', message.data.pdfUrl);
+            const extractResponse = await callBackendAPI('/api/extract-pdf-url', 'POST', {
+              pdfUrl: message.data.pdfUrl
+            });
+            if (extractResponse.text) {
+              contentInfo.text = sanitizeInput(extractResponse.text);
+              contentInfo.needsServerExtraction = false; // Mark as extracted
+              console.log('[Eureka AI] PDF text extracted successfully, length:', extractResponse.text.length);
+            }
+          } catch (error) {
+            console.error('[Eureka AI] Failed to extract PDF text:', error);
+            // Continue without text - user will see error when trying to use features
+          }
+        }
+
         // Store as currentContentInfo (replaces currentVideoInfo)
         await chrome.storage.local.set({ currentContentInfo: contentInfo });
         
@@ -328,8 +346,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === 'generate-quiz') {
     (async () => {
       try {
-        const videoId = currentVideoInfo?.url ? new URL(currentVideoInfo.url).searchParams.get('v') : null;
-        const questions = await generateQuiz(message.transcript, message.summary, message.context, currentVideoInfo?.title, videoId);
+        // Get current content info (supports video, webpage, PDF)
+        const stored = await chrome.storage.local.get(['currentContentInfo']);
+        const contentInfo = stored.currentContentInfo || currentVideoInfo;
+        
+        if (!contentInfo) {
+          throw new Error('No content available to generate quiz from');
+        }
+
+        const contentType = contentInfo.type || 'video';
+        const videoId = contentType === 'video' && contentInfo.url 
+          ? new URL(contentInfo.url).searchParams.get('v') 
+          : null;
+        
+        // Get transcript or text based on content type
+        const transcript = contentType === 'video' 
+          ? (message.transcript || contentInfo.transcript || '')
+          : null;
+        const text = contentType !== 'video' 
+          ? (message.text || contentInfo.text || '')
+          : null;
+        
+        // Generate summary if not provided
+        let summary = message.summary;
+        if (!summary && (transcript || text)) {
+          try {
+            summary = await generateSummary(
+              transcript || text || '',
+              message.context || '',
+              contentInfo.title || 'unknown',
+              videoId,
+              contentType
+            );
+          } catch (error) {
+            console.warn('[Eureka AI] Could not generate summary for quiz:', error);
+            // Continue without summary
+          }
+        }
+        
+        // Use transcript or text (whichever is available)
+        const contentForQuiz = transcript || text || '';
+        if (!contentForQuiz && !summary) {
+          throw new Error('Transcript or summary is required');
+        }
+        
+        const questions = await generateQuiz(contentForQuiz, summary, message.context, contentInfo.title || 'unknown', videoId);
         sendResponse({ success: true, questions });
       } catch (error) {
         console.error('Quiz generation error:', error);
@@ -440,18 +501,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           chatHistory: message.chatHistory || []
         };
         
-        // Add context if provided
+        // Add context if provided (truncate to avoid token limits)
         if (message.context) {
-          requestBody.context = message.context;
+          // Truncate context to 3000 chars (~750 tokens) to leave room for chat history
+          requestBody.context = message.context.length > 3000 
+            ? message.context.substring(0, 3000) + '\n[Note: Context truncated for length.]'
+            : message.context;
         } else if (contentInfo) {
-          // Auto-include content context for better responses
+          // Auto-include content context for better responses (truncated)
           const contentType = contentInfo.type || 'webpage';
           const contentText = contentType === 'video' 
             ? (contentInfo.transcript || '')
             : (contentInfo.text || '');
           
           if (contentText) {
-            requestBody.context = contentText.substring(0, 5000); // Include context
+            // Truncate to 3000 chars to avoid token limits
+            requestBody.context = contentText.substring(0, 3000);
+            if (contentText.length > 3000) {
+              requestBody.context += '\n[Note: Content truncated for length.]';
+            }
           }
         }
         

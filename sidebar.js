@@ -568,8 +568,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           e.preventDefault();
           if (!token) {
             alert('Please log in to upgrade to Pro');
-            return;
-          }
+        return;
+      }
           
           try {
             const response = await fetch(`${BACKEND_URL}/api/checkout/create-session`, {
@@ -873,26 +873,56 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Function to get combined context (webpage/video + uploaded PDF)
+  // Aggressively truncated to avoid token limits
   async function getCombinedContext() {
     const stored = await chrome.storage.local.get(['currentContentInfo', 'uploadedPdfContext']);
     const contentInfo = stored.currentContentInfo || currentVideoInfo;
     const uploadedPdf = stored.uploadedPdfContext;
 
     let context = '';
+    const maxPdfLength = 6000; // ~1500 tokens
+    const maxContentLength = 2000; // ~500 tokens
+    const totalMaxLength = 8000; // Total context should not exceed this
 
-    // Add webpage/video/PDF context
-    if (contentInfo) {
-      const contentType = contentInfo.type || 'webpage';
-      if (contentType === 'video' && contentInfo.transcript) {
-        context += `Video transcript:\n${contentInfo.transcript.substring(0, 5000)}\n\n`;
-      } else if (contentInfo.text) {
-        context += `${contentType === 'pdf' ? 'PDF' : 'Webpage'} content:\n${contentInfo.text.substring(0, 5000)}\n\n`;
+    // Add uploaded PDF context FIRST (most important for user queries)
+    if (uploadedPdf) {
+      // Handle both object format and string format for backward compatibility
+      const pdfText = typeof uploadedPdf === 'string' ? uploadedPdf : (uploadedPdf.text || '');
+      const pdfFilename = uploadedPdf.filename || 'uploaded PDF';
+      
+      if (pdfText && pdfText.trim()) {
+        // Truncate PDF text aggressively
+        const truncatedPdf = pdfText.substring(0, maxPdfLength);
+        context += `=== UPLOADED PDF DOCUMENT: ${pdfFilename} ===\n\n`;
+        context += `The user has uploaded a PDF file named "${pdfFilename}". `;
+        context += `Here is the COMPLETE TEXT CONTENT extracted from this PDF. `;
+        context += `You MUST use this content to answer questions about the PDF:\n\n`;
+        context += truncatedPdf;
+        if (pdfText.length > maxPdfLength) {
+          context += `\n\n[Note: PDF content truncated for length. The document contains ${Math.ceil(pdfText.length / 1000)}k characters total.]`;
+        }
+        context += `\n\n=== END OF UPLOADED PDF ===\n\n`;
       }
     }
 
-    // Add uploaded PDF context
-    if (uploadedPdf && uploadedPdf.text) {
-      context += `Uploaded PDF (${uploadedPdf.filename}):\n${uploadedPdf.text.substring(0, 5000)}\n\n`;
+    // Add webpage/video/PDF context (secondary, truncated to avoid token limits)
+    // Only add if we haven't exceeded total length
+    if (contentInfo && context.length < totalMaxLength) {
+      const remainingLength = totalMaxLength - context.length;
+      const contentType = contentInfo.type || 'webpage';
+      if (contentType === 'video' && contentInfo.transcript) {
+        const truncatedTranscript = contentInfo.transcript.substring(0, Math.min(maxContentLength, remainingLength));
+        context += `=== CURRENT VIDEO CONTENT ===\n\nVideo transcript:\n${truncatedTranscript}\n\n`;
+      } else if (contentInfo.text) {
+        const truncatedText = contentInfo.text.substring(0, Math.min(maxContentLength, remainingLength));
+        context += `=== CURRENT ${contentType.toUpperCase()} CONTENT ===\n\n${truncatedText}\n\n`;
+      }
+    }
+
+    // Final safety check - truncate if still too long
+    if (context.length > totalMaxLength) {
+      context = context.substring(0, totalMaxLength);
+      context += '\n\n[Note: Context truncated for length.]';
     }
 
     return context.trim();
@@ -1226,47 +1256,86 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function checkQuizAnswers() {
-    const questions = quizContent?.querySelectorAll('.question');
+    const contentWrapper = quizContent?.querySelector('.quiz-content-wrapper');
+    const questions = contentWrapper?.querySelectorAll('.question') || quizContent?.querySelectorAll('.question');
     if (!questions) return;
 
     let correctAnswers = 0;
     let totalQuestions = questions.length;
 
+    // Mark answers and count correct
     questions.forEach((question) => {
       const selectedAnswer = question.querySelector('input[type="radio"]:checked');
       const correctAnswer = question.querySelector('.correct-answer')?.textContent;
-
-      if (selectedAnswer && correctAnswer && selectedAnswer.value === correctAnswer) {
+      const allOptions = question.querySelectorAll('.quiz-option-button, label[for*="option"]');
+      
+      // Remove any existing marking
+      allOptions.forEach(option => {
+        option.classList.remove('quiz-answer-correct', 'quiz-answer-incorrect');
+        option.style.border = '';
+      });
+      
+      // Mark correct answer with green outline
+      if (correctAnswer) {
+        allOptions.forEach(option => {
+          const optionText = option.textContent.trim() || option.querySelector('span')?.textContent.trim();
+          if (optionText === correctAnswer) {
+            option.classList.add('quiz-answer-correct');
+            option.style.border = '2px solid #10b981';
+          }
+        });
+      }
+      
+      // Mark selected answer
+      if (selectedAnswer) {
+        const selectedLabel = selectedAnswer.closest('label') || selectedAnswer.parentElement;
+        if (selectedLabel) {
+          if (selectedAnswer.value === correctAnswer) {
         correctAnswers++;
+            selectedLabel.classList.add('quiz-answer-correct');
+            selectedLabel.style.border = '2px solid #10b981';
+          } else {
+            selectedLabel.classList.add('quiz-answer-incorrect');
+            selectedLabel.style.border = '2px solid #ef4444';
+          }
+        }
       }
     });
 
-    const percentage = Math.round((correctAnswers / totalQuestions) * 100 * 10) / 10; // Round to 1 decimal place
-    const resultClass = percentage >= 80 ? 'good' : percentage >= 60 ? 'okay' : 'poor';
-
-    // Create result element
-    const resultElement = document.createElement('div');
-    resultElement.className = `quiz-result ${resultClass}`;
-    resultElement.textContent = `You scored ${percentage}% (${correctAnswers}/${totalQuestions} correct)`;
-
-    // Show tooltip on regenerate button after quiz completion
-    setTimeout(() => {
-      showRegenerateTooltip();
-    }, 1500);
-
-    // Remove any existing result
-    const existingResult = quizContent?.querySelector('.quiz-result');
-    if (existingResult) {
-      existingResult.remove();
-    }
-
-    // Find the navigation element
-    const navigation = quizContent?.querySelector('.quiz-navigation');
+    // Show results dialog
+    showQuizResultsDialog(correctAnswers, totalQuestions);
+  }
+  
+  function showQuizResultsDialog(correctAnswers, totalQuestions) {
+    const dialog = document.getElementById('quiz-results-dialog');
+    const messageEl = document.getElementById('quiz-results-message');
+    if (!dialog || !messageEl) return;
     
-    // Insert the result after the navigation
-    if (navigation && quizContent) {
-      navigation.insertAdjacentElement('afterend', resultElement);
+    const percentage = Math.round((correctAnswers / totalQuestions) * 100);
+    let message = '';
+    
+    if (percentage === 100) {
+      message = 'YOU WON!';
+    } else if (correctAnswers === 2) {
+      message = 'YOU DID OK';
+    } else if (correctAnswers === 1) {
+      message = 'AT LEAST YOU KNEW ONE THING!';
+    } else {
+      message = 'YOU COULDN\'T BE MORE WRONG!';
     }
+    
+    messageEl.textContent = message;
+    messageEl.className = 'quiz-results-message quiz-results-message--' + (percentage === 100 ? 'win' : correctAnswers === 2 ? 'ok' : correctAnswers === 1 ? 'partial' : 'fail');
+    
+    dialog.showModal();
+    
+    // Close handler
+    dialog.addEventListener('close', () => {
+      // Show tooltip on regenerate button after quiz completion
+      setTimeout(() => {
+        showRegenerateTooltip();
+      }, 500);
+    }, { once: true });
   }
 
   // Add event listener to submit button in navigation
@@ -1289,21 +1358,68 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Show first question
       questions[0].classList.add('active');
     }
+    
+    // Add large purple navigation buttons if they don't exist
+    let navWrapper = quizContent?.querySelector('.quiz-navigation-wrapper');
+    if (!navWrapper && quizContent) {
+      // Wrap quiz content with navigation buttons
+      const originalHTML = quizContent.innerHTML;
+      navWrapper = document.createElement('div');
+      navWrapper.className = 'quiz-navigation-wrapper';
+      
+      // Create left navigation button
+      const prevButton = document.createElement('button');
+      prevButton.id = 'quiz-prev-button';
+      prevButton.className = 'quiz-nav-button quiz-nav-button--prev';
+      prevButton.innerHTML = '←';
+      prevButton.setAttribute('aria-label', 'Previous question');
+      
+      // Create right navigation button
+      const nextButton = document.createElement('button');
+      nextButton.id = 'quiz-next-button';
+      nextButton.className = 'quiz-nav-button quiz-nav-button--next';
+      nextButton.innerHTML = '→';
+      nextButton.setAttribute('aria-label', 'Next question');
+      
+      // Create content wrapper
+      const contentWrapper = document.createElement('div');
+      contentWrapper.className = 'quiz-content-wrapper';
+      contentWrapper.innerHTML = originalHTML;
+      
+      navWrapper.appendChild(prevButton);
+      navWrapper.appendChild(contentWrapper);
+      navWrapper.appendChild(nextButton);
+      
+      quizContent.innerHTML = '';
+      quizContent.appendChild(navWrapper);
+      
+      // Re-query questions after restructuring
+      const newQuestions = contentWrapper.querySelectorAll('.question');
+      if (newQuestions.length > 0) {
+        newQuestions[0].classList.add('active');
+      }
+    }
+    
     updateQuestionCounter();
     
     // Add navigation event listeners
-    const prevButton = quizContent?.querySelector('#prevQuestion');
-    const nextButton = quizContent?.querySelector('#nextQuestion');
+    const prevButton = quizContent?.querySelector('#quiz-prev-button') || quizContent?.querySelector('#prevQuestion');
+    const nextButton = quizContent?.querySelector('#quiz-next-button') || quizContent?.querySelector('#nextQuestion');
     
-    prevButton?.addEventListener('click', () => navigateQuestions(-1));
-    nextButton?.addEventListener('click', () => navigateQuestions(1));
+    if (prevButton) {
+      prevButton.addEventListener('click', () => navigateQuestions(-1));
+    }
+    if (nextButton) {
+      nextButton.addEventListener('click', () => navigateQuestions(1));
+    }
     
     // Update button states
     updateNavigationButtons();
   }
 
   function navigateQuestions(direction) {
-    const questions = quizContent?.querySelectorAll('.question');
+    const contentWrapper = quizContent?.querySelector('.quiz-content-wrapper');
+    const questions = contentWrapper?.querySelectorAll('.question') || quizContent?.querySelectorAll('.question');
     if (!questions) return;
 
     questions[currentQuestionIndex].classList.remove('active');
@@ -1323,12 +1439,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function updateNavigationButtons() {
-    const prevButton = quizContent?.querySelector('#prevQuestion');
-    const nextButton = quizContent?.querySelector('#nextQuestion');
+    const prevButton = quizContent?.querySelector('#quiz-prev-button') || quizContent?.querySelector('#prevQuestion');
+    const nextButton = quizContent?.querySelector('#quiz-next-button') || quizContent?.querySelector('#nextQuestion');
     
-    if (prevButton && nextButton) {
+    if (prevButton) {
       prevButton.disabled = currentQuestionIndex === 0;
+      prevButton.style.opacity = currentQuestionIndex === 0 ? '0.5' : '1';
+    }
+    if (nextButton) {
       nextButton.disabled = currentQuestionIndex === totalQuestions - 1;
+      nextButton.style.opacity = currentQuestionIndex === totalQuestions - 1 ? '0.5' : '1';
     }
   }
   
@@ -1379,6 +1499,150 @@ document.addEventListener('DOMContentLoaded', async () => {
       showState(videoInfoState);
     }
   }
+  
+  // Section info button handlers
+  const sectionInfoButtons = {
+    'summary-info-button': 'summary-info-dialog',
+    'flashcard-info-button': 'flashcard-info-dialog',
+    'quiz-info-button': 'quiz-info-dialog',
+    'notes-info-button': 'notes-info-dialog'
+  };
+
+  Object.entries(sectionInfoButtons).forEach(([buttonId, dialogId]) => {
+    const button = document.getElementById(buttonId);
+    const dialog = document.getElementById(dialogId);
+    const upgradeButton = document.getElementById(buttonId.replace('-button', '-upgrade'));
+
+    if (button && dialog) {
+      button.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dialog.showModal();
+      });
+    }
+
+    if (upgradeButton) {
+      upgradeButton.addEventListener('click', async () => {
+        dialog.close();
+        const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
+        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+        const token = stored.sumvid_auth_token;
+        
+        if (!token) {
+          alert('Please log in to upgrade to Pro');
+          return;
+        }
+
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/checkout/create-session`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to create checkout session');
+          }
+          
+          const data = await response.json();
+          if (data.url) {
+            window.open(data.url, '_blank');
+      } else {
+            alert('Upgrade feature coming soon!');
+      }
+    } catch (error) {
+          console.error('[Eureka AI] Upgrade error:', error);
+          alert(`Failed to initiate upgrade: ${error.message}`);
+        }
+      });
+    }
+  });
+
+  // Auto-login dialog for non-logged-in users
+  let autoLoginInterval = null;
+  let autoLoginTimeout = null;
+  
+  async function checkAndShowLoginDialog() {
+    const accountDialog = document.getElementById('account-dialog');
+    const createAccountDialog = document.getElementById('create-account-dialog');
+    if (!accountDialog) return;
+    
+    // Don't interrupt if create account dialog is open
+    if (createAccountDialog && createAccountDialog.open) {
+      return;
+    }
+    
+    // Check if user is logged in
+    const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+    const isLoggedIn = !!stored.sumvid_auth_token;
+    
+    // If not logged in and dialog is not open, show it
+    if (!isLoggedIn && !accountDialog.open) {
+      accountDialog.showModal();
+    } else if (isLoggedIn) {
+      // User is logged in, stop auto-opening
+      if (autoLoginInterval) {
+        clearInterval(autoLoginInterval);
+        autoLoginInterval = null;
+      }
+      if (autoLoginTimeout) {
+        clearTimeout(autoLoginTimeout);
+        autoLoginTimeout = null;
+      }
+    }
+  }
+  
+  function startAutoLoginDialog() {
+    // Check immediately
+    checkAndShowLoginDialog();
+    
+    // Then check every 10 seconds
+    autoLoginInterval = setInterval(() => {
+      checkAndShowLoginDialog();
+    }, 10000);
+    
+    // Listen for dialog close events
+    const accountDialog = document.getElementById('account-dialog');
+    if (accountDialog) {
+      accountDialog.addEventListener('close', () => {
+        // If user closed dialog and still not logged in, reopen after 10 seconds
+        chrome.storage.local.get(['sumvid_auth_token'], (result) => {
+          if (!result.sumvid_auth_token) {
+            if (autoLoginTimeout) {
+              clearTimeout(autoLoginTimeout);
+            }
+            autoLoginTimeout = setTimeout(() => {
+              checkAndShowLoginDialog();
+            }, 10000);
+          }
+        });
+      });
+    }
+    
+    // Listen for login success
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'local' && changes.sumvid_auth_token) {
+        if (changes.sumvid_auth_token.newValue) {
+          // User logged in, stop auto-opening
+          if (autoLoginInterval) {
+            clearInterval(autoLoginInterval);
+            autoLoginInterval = null;
+          }
+          if (autoLoginTimeout) {
+            clearTimeout(autoLoginTimeout);
+            autoLoginTimeout = null;
+          }
+        }
+      }
+    });
+  }
+  
+  // Start auto-login dialog after a short delay to let modules load
+  setTimeout(() => {
+    startAutoLoginDialog();
+  }, 1000);
   
   // Initialize extension
   initializeExtension();
@@ -1948,6 +2212,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Try immediately, then retry if needed
   setTimeout(initializeModules, 100);
 
+  // Freemium uses counter (top of sidebar)
+  function updateUsesCounter(usage, subscriptionStatus) {
+    try {
+      const usesCounter = document.getElementById('uses-counter');
+      const usesRemainingText = document.getElementById('uses-remaining-text');
+      if (!usesCounter || !usesRemainingText) return;
+
+      if (subscriptionStatus === 'premium') {
+        usesCounter.style.display = 'none';
+        return;
+      }
+
+      if (!usage) {
+        usesCounter.style.display = 'none';
+        return;
+      }
+
+      const remaining = Math.max(0, (usage.enhancementsLimit || 0) - (usage.enhancementsUsed || 0));
+      usesRemainingText.textContent = `${remaining} uses remaining`;
+      usesCounter.style.display = 'block';
+    } catch (e) {
+      // Never let the sidebar crash from counter UI
+      console.warn('[Eureka AI] Failed to update uses counter:', e);
+    }
+  }
+
   // Initialize usage tracking and update status cards
   async function updateStatusCards() {
     // Update cards in account dialog
@@ -1990,7 +2280,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       // Fallback to local storage if backend is not available or user is not logged in
       if (!usage && window.UsageTracker) {
-        await window.UsageTracker.resetDailyUsageIfNeeded();
+      await window.UsageTracker.resetDailyUsageIfNeeded();
         const localUsage = await window.UsageTracker.getUsage();
         usage = {
           enhancementsUsed: localUsage.enhancementsUsed,
@@ -2012,6 +2302,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Update user status and plan in account dialog
       const storedToken = await chrome.storage.local.get(['sumvid_auth_token']);
       const authToken = storedToken.sumvid_auth_token;
+      let subscriptionStatus = 'freemium';
       
       if (authToken) {
         try {
@@ -2029,7 +2320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const displayName = (userProfile.name && userProfile.name.trim()) 
               ? userProfile.name 
               : (userProfile.email || 'User');
-            const subscriptionStatus = userProfile.subscription_status || 'freemium';
+            subscriptionStatus = userProfile.subscription_status || 'freemium';
             
             if (userStatusEl) {
               userStatusEl.textContent = displayName;
@@ -2049,6 +2340,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           userPlanEl.textContent = 'Freemium';
         }
       }
+      
+      // Update uses counter (only for freemium users)
+      updateUsesCounter(usage, subscriptionStatus);
       
       // Update button states based on usage
       const summarizeButton = document.getElementById('summarize-button');
@@ -2159,7 +2453,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert('No content available to summarize.');
         return;
       }
-      
+
       // Check for content based on type (transcript for videos, text for webpages/PDFs)
       const contentType = currentVideoInfo.type || 'video';
       const hasContent = contentType === 'video' 
@@ -2202,11 +2496,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (error) {
         console.warn('[Eureka AI] Failed to check usage limit from backend, using local storage fallback:', error);
         // Fallback to local storage if backend is not available
-        if (window.UsageTracker) {
-          const limitReached = await window.UsageTracker.isLimitReached();
-          if (limitReached) {
-            alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-            return;
+      if (window.UsageTracker) {
+        const limitReached = await window.UsageTracker.isLimitReached();
+        if (limitReached) {
+          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+          return;
           }
         }
       }
@@ -2255,7 +2549,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert('No content available to generate quiz from.');
         return;
       }
-      
+
       // Check for content based on type (transcript for videos, text for webpages/PDFs)
       const contentType = currentVideoInfo.type || 'video';
       const hasContent = contentType === 'video' 
@@ -2298,11 +2592,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (error) {
         console.warn('[Eureka AI] Failed to check usage limit from backend, using local storage fallback:', error);
         // Fallback to local storage if backend is not available
-        if (window.UsageTracker) {
-          const limitReached = await window.UsageTracker.isLimitReached();
-          if (limitReached) {
-            alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-            return;
+      if (window.UsageTracker) {
+        const limitReached = await window.UsageTracker.isLimitReached();
+        if (limitReached) {
+          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
+          return;
           }
         }
       }
@@ -2525,20 +2819,34 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateInfoCenter(contentInfo.duration, '');
     }
     
-    summaryContainer?.classList.add('hidden');
-    quizContainer?.classList.add('hidden');
+    // Always show containers, but disable buttons if no content
+      summaryContainer?.classList.remove('hidden');
+      quizContainer?.classList.remove('hidden');
     
     // Status cards are now in account dialog, no need to show status section
     
-    // Show containers if we have content (transcript for video, text for webpage/PDF)
+    // Check if we have content (transcript for video, text for webpage/PDF)
     const hasContent = contentInfo.transcript || contentInfo.text || contentInfo.needsServerExtraction;
+    const summarizeButton = document.getElementById('summarize-button');
+    
     if (hasContent) {
-      summaryContainer?.classList.remove('hidden');
-      quizContainer?.classList.remove('hidden');
+      // Enable summarize button with normal text
+      if (summarizeButton) {
+        summarizeButton.disabled = false;
+        summarizeButton.textContent = 'Summarize';
+        summarizeButton.classList.remove('btn--disabled');
+      }
       // Chat section is always visible
       // But keep content hidden until manually generated
       if (summaryContent) summaryContent.style.display = 'none';
       if (quizContent) quizContent.style.display = 'none';
+    } else {
+      // Disable summarize button and show "No content to summarize"
+      if (summarizeButton) {
+        summarizeButton.disabled = true;
+        summarizeButton.textContent = 'No content to summarize';
+        summarizeButton.classList.add('btn--disabled');
+      }
     }
     
     showState(videoInfoState);
@@ -2561,8 +2869,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (changes.currentVideoInfo?.newValue) {
       // Legacy support for currentVideoInfo
       const newVideoInfo = changes.currentVideoInfo.newValue;
-      displayVideoInfo(newVideoInfo);
-    }
+        displayVideoInfo(newVideoInfo);
+      }
 
     // Note: clarify requests are now handled by the message listener
     // This storage listener is disabled to prevent duplicate messages

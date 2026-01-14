@@ -146,6 +146,85 @@
   z-index: 10001;
 }
 
+/* Create Account Dialog - match account-dialog styling */
+#create-account-dialog {
+  background: rgba(0, 0, 0, 0.85);
+  border: none;
+  padding: 0;
+  margin: auto;
+  max-width: 90vw;
+  max-height: 90vh;
+  width: 500px;
+}
+
+#create-account-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+#create-account-dialog .modal__content {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 0;
+  max-width: 100%;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] #create-account-dialog .modal__content {
+  background: #2d2d2d;
+}
+
+#create-account-dialog .modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #ffffff;
+}
+
+[data-theme="dark"] #create-account-dialog .modal__header {
+  background: #2d2d2d;
+  border-bottom-color: #404040;
+}
+
+#create-account-dialog .modal__header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333333;
+}
+
+[data-theme="dark"] #create-account-dialog .modal__header h2 {
+  color: #ffffff;
+}
+
+#create-account-dialog .modal__body {
+  padding: 24px;
+  overflow-y: auto;
+  background: #ffffff;
+}
+
+[data-theme="dark"] #create-account-dialog .modal__body {
+  background: #2d2d2d;
+}
+
+#create-account-dialog .modal__close {
+  padding: 4px;
+  color: #666666;
+}
+
+#create-account-dialog .icon--close {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
 .account__logged-in-body {
   display: flex;
   flex-direction: column;

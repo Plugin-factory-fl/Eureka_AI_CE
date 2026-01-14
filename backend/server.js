@@ -14,6 +14,8 @@ import apiRoutes from './routes/api.js';
 import userRoutes from './routes/user.js';
 import webhookRoutes from './routes/webhooks.js';
 import checkoutRoutes from './routes/checkout.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Load environment variables
 dotenv.config();
@@ -21,11 +23,17 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Trust proxy (required for Render and other reverse proxies)
 app.set('trust proxy', true);
 
 // Security middleware
 app.use(helmet());
+
+// Static files (for checkout success page, etc.)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // CORS configuration
 const allowedOriginsRaw = process.env.ALLOWED_ORIGINS || '*';
@@ -127,6 +135,15 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/checkout', checkoutRoutes);
+
+// Stripe redirect pages
+app.get('/checkout-success', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'checkout-success.html'));
+});
+
+app.get('/checkout-cancelled', (req, res) => {
+  res.status(200).send('Checkout cancelled. You can close this tab.');
+});
 app.use('/api', apiRoutes);
 
 // Error handling middleware

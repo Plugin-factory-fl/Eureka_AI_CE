@@ -9,16 +9,47 @@
 
   const TOOLBAR_ID = 'eureka-ai-selection-toolbar';
   const TOOLBAR_VISIBLE_CLASS = 'is-visible';
+  const PDF_FALLBACK_CLASS = 'is-pdf-fallback';
   let toolbarElement = null;
   let selectedText = '';
   let updateRaf = null;
+  let lastMouseUpAt = 0;
+
+  function isChromePdfViewerPage() {
+    try {
+      const pdfEmbed = document.body?.querySelector?.('embed[type="application/pdf"]');
+      return !!(
+        pdfEmbed &&
+        pdfEmbed.getAttribute('width') === '100%' &&
+        pdfEmbed.getAttribute('height') === '100%' &&
+        pdfEmbed.getAttribute('internalid')
+      );
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * Initializes the selection toolbar system
    */
-  function initSelectionToolbar() {
+  async function initSelectionToolbar() {
+    // Check if feature is enabled in settings
+    const result = await chrome.storage.local.get(['highlightToClarifyEnabled']);
+    const highlightToClarifyEnabled = result.highlightToClarifyEnabled !== undefined ? result.highlightToClarifyEnabled : true; // Default ON
+    
+    if (!highlightToClarifyEnabled) {
+      console.log('[Eureka AI] Highlight-to-clarify is disabled in settings');
+      return;
+    }
+    
     // Listen for selection changes
     document.addEventListener('selectionchange', handleSelectionChange);
+
+    // PDFs can be flaky about selectionchange; mouseup is a reliable second signal
+    document.addEventListener('mouseup', () => {
+      lastMouseUpAt = Date.now();
+      handleSelectionChange();
+    }, true);
     
     // Hide toolbar when clicking outside
     document.addEventListener('click', handleDocumentClick, true);
@@ -58,9 +89,17 @@
    */
   function updateSelectionToolbar() {
     const selection = window.getSelection();
-    const text = selection.toString().trim();
+    const text = selection?.toString?.().trim?.() || '';
 
     if (!selection || selection.isCollapsed || !text) {
+      // Chrome PDF viewer fallback: show a fixed-position Clarify button shortly after mouseup.
+      // Click handler will attempt clipboard-read as a best-effort fallback.
+      if (isChromePdfViewerPage() && Date.now() - lastMouseUpAt < 1200) {
+        selectedText = '';
+        showToolbar(null, { forceFixed: true });
+        return;
+      }
+
       hideToolbar();
       return;
     }
@@ -69,7 +108,7 @@
     // Removed YouTube exclusion - toolbar should work everywhere
 
     selectedText = text;
-    showToolbar(selection);
+    showToolbar(selection, { forceFixed: false });
   }
 
   /**
@@ -91,7 +130,7 @@
   /**
    * Shows the selection toolbar
    */
-  function showToolbar(selection) {
+  function showToolbar(selection, options = { forceFixed: false }) {
     if (!toolbarElement) {
       ensureToolbar();
     }
@@ -101,14 +140,15 @@
       return;
     }
 
-    const rangeRect = getSelectionRect(selection);
-    if (!rangeRect) {
+    const rangeRect = options.forceFixed ? null : getSelectionRect(selection);
+    if (!options.forceFixed && !rangeRect) {
       hideToolbar();
       return;
     }
 
     // Hide toolbar first to measure it accurately
     toolbarElement.classList.remove(TOOLBAR_VISIBLE_CLASS);
+    toolbarElement.classList.toggle(PDF_FALLBACK_CLASS, !!options.forceFixed);
     toolbarElement.style.position = 'fixed';
     toolbarElement.style.left = '-9999px';
     toolbarElement.style.top = '0';
@@ -135,20 +175,27 @@
     }
 
     const { clientWidth: vw, clientHeight: vh } = document.documentElement;
-    const selectionCenterX = rangeRect.left + rangeRect.width / 2;
-    const selectionBottom = rangeRect.bottom;
+    const selectionCenterX = rangeRect ? (rangeRect.left + rangeRect.width / 2) : (vw - 80);
+    const selectionBottom = rangeRect ? rangeRect.bottom : (vh - 40);
 
     // Position toolbar BELOW selection (like PromptProfile)
     let left = Math.max(w / 2 + 8, Math.min(vw - w / 2 - 8, selectionCenterX));
     let top = selectionBottom + 8;
 
+    if (options.forceFixed) {
+      // Put it near bottom-right so it's visible even if selection rect can't be resolved.
+      left = vw - w / 2 - 16;
+      top = vh - h - 24;
+      toolbarElement.style.transform = 'translate(-50%, 0)';
+    }
+
     // Check if toolbar would go off-screen at bottom
     const maxTop = vh - h - 8;
-    if (top > maxTop) {
+    if (!options.forceFixed && top > maxTop) {
       // Position above selection instead
       top = Math.max(8, rangeRect.top - h - 8);
       toolbarElement.style.transform = 'translate(-50%, -100%)';
-    } else {
+    } else if (!options.forceFixed) {
       toolbarElement.style.transform = 'translate(-50%, 0)';
     }
 
@@ -226,19 +273,35 @@
    * Handles Clarify action - opens sidebar and sends message to sidechat
    */
   async function handleClarify() {
-    if (!selectedText) {
-      console.warn('[Eureka AI] No selected text to clarify');
+    let textToClarify = selectedText;
+
+    // Best-effort fallback for Chrome PDF viewer: try clipboard if selection text isn't readable
+    if (!textToClarify) {
+      try {
+        if (navigator.clipboard?.readText) {
+          const clip = await navigator.clipboard.readText();
+          if (clip && clip.trim()) {
+            textToClarify = clip.trim();
+          }
+        }
+      } catch {
+        // Clipboard read may be blocked depending on permissions
+      }
+    }
+
+    if (!textToClarify) {
+      console.warn('[Eureka AI] No selected/clipboard text to clarify');
       return;
     }
 
     try {
-      console.log('[Eureka AI] Clarify action triggered with text:', selectedText.substring(0, 50));
+      console.log('[Eureka AI] Clarify action triggered with text:', textToClarify.substring(0, 50));
       
       // Send message to background script to open side panel and handle clarify
       // Content scripts can't use chrome.tabs or chrome.sidePanel directly
       chrome.runtime.sendMessage({
         action: 'open-side-panel-and-clarify',
-        text: selectedText
+        text: textToClarify
       }, (response) => {
         if (chrome.runtime.lastError) {
           console.error('[Eureka AI] Error sending clarify message:', chrome.runtime.lastError);
@@ -273,6 +336,12 @@
       #${TOOLBAR_ID}.${TOOLBAR_VISIBLE_CLASS} {
         opacity: 1;
         pointer-events: auto;
+      }
+
+      /* PDF fallback: slightly brighter + bordered so it stands out over PDF backgrounds */
+      #${TOOLBAR_ID}.${PDF_FALLBACK_CLASS} {
+        background: rgba(17, 24, 39, 0.95);
+        border: 1px solid rgba(168, 85, 247, 0.35);
       }
 
       .eureka-ai-selection-toolbar__button {

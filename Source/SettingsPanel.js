@@ -19,11 +19,13 @@ function registerSettingsHandlers() {
   // Load and render current settings
   async function loadSettings() {
     try {
-      const result = await chrome.storage.local.get(['settings', 'darkMode']);
+      const result = await chrome.storage.local.get(['settings', 'darkMode', 'highlightToClarifyEnabled', 'stickyButtonEnabled']);
       const settings = result.settings || {
         cacheDuration: 24
       };
       const darkMode = result.darkMode || false;
+      const highlightToClarifyEnabled = result.highlightToClarifyEnabled !== undefined ? result.highlightToClarifyEnabled : true; // Default ON
+      const stickyButtonEnabled = result.stickyButtonEnabled !== undefined ? result.stickyButtonEnabled : true; // Default ON
 
       // Update dark mode toggle
       const darkModeToggle = document.getElementById('setting-dark-mode');
@@ -37,10 +39,22 @@ function registerSettingsHandlers() {
         }
       }
 
-      return { ...settings, darkMode };
+      // Update highlight-to-clarify toggle
+      const highlightClarifyToggle = document.getElementById('setting-highlight-clarify');
+      if (highlightClarifyToggle) {
+        highlightClarifyToggle.checked = highlightToClarifyEnabled;
+      }
+
+      // Update sticky button toggle
+      const stickyButtonToggle = document.getElementById('setting-sticky-button');
+      if (stickyButtonToggle) {
+        stickyButtonToggle.checked = stickyButtonEnabled;
+      }
+
+      return { ...settings, darkMode, highlightToClarifyEnabled, stickyButtonEnabled };
     } catch (error) {
       console.error('[SettingsPanel] Error loading settings:', error);
-      return { darkMode: false, cacheDuration: 24 };
+      return { darkMode: false, cacheDuration: 24, highlightToClarifyEnabled: true, stickyButtonEnabled: true };
     }
   }
 
@@ -85,14 +99,23 @@ function registerSettingsHandlers() {
 
     // User confirmed, save settings
     const darkModeToggle = document.getElementById('setting-dark-mode');
+    const highlightClarifyToggle = document.getElementById('setting-highlight-clarify');
+    const stickyButtonToggle = document.getElementById('setting-sticky-button');
 
     const darkMode = darkModeToggle ? darkModeToggle.checked : false;
+    const highlightToClarifyEnabled = highlightClarifyToggle ? highlightClarifyToggle.checked : true;
+    const stickyButtonEnabled = stickyButtonToggle ? stickyButtonToggle.checked : true;
+    
     const newSettings = {
       cacheDuration: 24 // Can be made configurable later
     };
 
     await saveSettings(newSettings);
-    await chrome.storage.local.set({ darkMode });
+    await chrome.storage.local.set({ 
+      darkMode,
+      highlightToClarifyEnabled,
+      stickyButtonEnabled
+    });
 
     // Apply dark mode setting
     if (darkMode) {
@@ -102,7 +125,9 @@ function registerSettingsHandlers() {
     }
 
     // Trigger custom event for other modules to react to settings changes
-    window.dispatchEvent(new CustomEvent('settingsUpdated', { detail: newSettings }));
+    window.dispatchEvent(new CustomEvent('settingsUpdated', { 
+      detail: { ...newSettings, highlightToClarifyEnabled, stickyButtonEnabled }
+    }));
   });
 
   // Handle cancel button

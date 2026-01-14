@@ -28,7 +28,16 @@
    * @param {number} options.offsetX - Horizontal offset in pixels (default: 250)
    * @param {number} options.offsetY - Vertical offset in pixels (default: 250)
    */
-  function initStickyButton(options = {}) {
+  async function initStickyButton(options = {}) {
+    // Check if feature is enabled in settings
+    const result = await chrome.storage.local.get(['stickyButtonEnabled']);
+    const stickyButtonEnabled = result.stickyButtonEnabled !== undefined ? result.stickyButtonEnabled : true; // Default ON
+    
+    if (!stickyButtonEnabled) {
+      console.log('[Eureka AI] Sticky button is disabled in settings');
+      return null;
+    }
+    
     if (stickyButton && document.getElementById(BUTTON_ID)) {
       console.log('[SumVid] Sticky button already initialized');
       return stickyButton;
@@ -64,8 +73,8 @@
       loadSavedPosition(button, position, offsetX, offsetY).then(() => {
         // Make button draggable after position is set
         makeButtonDraggable(button);
-        // Show toast after a delay
-        showToastDelayed(button);
+        // Start periodic toast notifications
+        startPeriodicToasts(button);
       });
 
       console.log('[SumVid] Sticky button initialized and added to page');
@@ -217,11 +226,15 @@
     isDragging = true;
 
     const rect = button.getBoundingClientRect();
-    const buttonX = rect.left + rect.width / 2;
-    const buttonY = rect.top + rect.height / 2;
+    // Convert any right/bottom anchoring into left/top so dragging does not "jump"
+    button.style.left = `${Math.round(rect.left)}px`;
+    button.style.top = `${Math.round(rect.top)}px`;
+    button.style.right = 'auto';
+    button.style.bottom = 'auto';
 
-    dragOffsetX = e.clientX - buttonX;
-    dragOffsetY = e.clientY - buttonY;
+    // Keep the cursor "grip point" consistent by storing offset within the element
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
 
       button.classList.add('eureka-ai-sticky-button--dragging');
     button.style.cursor = 'grabbing';
@@ -255,8 +268,8 @@
     newX = Math.max(minX, Math.min(maxX, newX));
     newY = Math.max(minY, Math.min(maxY, newY));
 
-    button.style.left = `${newX}px`;
-    button.style.top = `${newY}px`;
+    button.style.left = `${Math.round(newX)}px`;
+    button.style.top = `${Math.round(newY)}px`;
     button.style.right = 'auto';
     button.style.bottom = 'auto';
   }
@@ -339,23 +352,44 @@
     });
   }
 
-  /**
-   * Shows toast notification after a delay (2-3 seconds)
-   */
-  function showToastDelayed(button) {
-    // Check if toast was already shown for this session
-    chrome.storage.local.get([TOAST_STORAGE_KEY], (result) => {
-      if (result[TOAST_STORAGE_KEY]) {
-        // Toast already shown, don't show again
-        return;
-      }
+  let toastInterval = null;
+  let currentToastMessageIndex = 0;
+  const toastMessages = ['Eureka!', 'Click to open sidebar'];
 
-      // Show toast after 2-3 second delay (random between 2-3 seconds)
-      const delay = 2000 + Math.random() * 1000;
-      setTimeout(() => {
+  /**
+   * Starts periodic toast notifications
+   */
+  function startPeriodicToasts(button) {
+    // Clear any existing interval
+    if (toastInterval) {
+      clearInterval(toastInterval);
+    }
+
+    // Show first toast after 2 seconds
+    setTimeout(() => {
+      showToast(button);
+    }, 2000);
+
+    // Then show every 30 seconds
+    toastInterval = setInterval(() => {
+      if (button && document.body.contains(button)) {
         showToast(button);
-      }, delay);
-    });
+      } else {
+        // Button removed, stop interval
+        clearInterval(toastInterval);
+        toastInterval = null;
+      }
+    }, 30000); // 30 seconds
+  }
+
+  /**
+   * Stops periodic toast notifications
+   */
+  function stopPeriodicToasts() {
+    if (toastInterval) {
+      clearInterval(toastInterval);
+      toastInterval = null;
+    }
   }
 
   /**
@@ -373,7 +407,10 @@
     const toast = document.createElement('div');
     toast.id = TOAST_ID;
     toast.className = 'eureka-ai-sticky-toast';
-    toast.textContent = 'Click here to open Eureka AI';
+    
+    // Alternate between messages
+    toast.textContent = toastMessages[currentToastMessageIndex];
+    currentToastMessageIndex = (currentToastMessageIndex + 1) % toastMessages.length;
 
     document.body.appendChild(toast);
 
@@ -390,11 +427,14 @@
       toast.style.transform = 'translateX(-50%) translateY(0)';
     });
 
+    // Auto-dismiss after 3 seconds
+    setTimeout(() => {
+      dismissToast(toast);
+    }, 3000);
+
     // Dismiss on hover
     toast.addEventListener('mouseenter', () => {
       dismissToast(toast);
-      // Mark toast as shown in storage
-      chrome.storage.local.set({ [TOAST_STORAGE_KEY]: true });
     });
 
     toastElement = toast;

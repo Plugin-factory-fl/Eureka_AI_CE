@@ -47,10 +47,15 @@
     </div>
     
     <div class="content">
-      <!-- Get Pro Button (Always visible at top) -->
-      <button id="get-pro-button" class="get-pro-button" type="button">
-        Get Pro
-      </button>
+      <!-- Get Pro Button and Uses Counter (Always visible at top) -->
+      <div class="pro-section">
+        <div id="uses-counter" class="uses-counter" style="display: none;">
+          <span id="uses-remaining-text">0 uses remaining</span>
+        </div>
+        <button id="get-pro-button" class="get-pro-button" type="button">
+          Get Pro
+        </button>
+      </div>
 
       <!-- AI Chat Section (Always Visible) -->
       <section class="panel__section panel__section--chat" id="chat-section">
@@ -116,6 +121,9 @@
                 <polyline points="10 9 9 9 8 9"></polyline>
               </svg>
               Summarize this content
+              <button class="section-info-button" id="summary-info-button" aria-label="Summary information" type="button">
+                <span class="info-button__icon">i</span>
+              </button>
               <div class="status-indicator">
                 <span class="usage-badge">1 use</span>
                 <div class="loading-spinner" style="display: none;"></div>
@@ -175,6 +183,9 @@
                 <line x1="9" y1="15" x2="15" y2="15"></line>
               </svg>
               Flashcard Maker
+              <button class="section-info-button" id="flashcard-info-button" aria-label="Flashcard information" type="button">
+                <span class="info-button__icon">i</span>
+              </button>
               <div class="status-indicator">
                 <span class="usage-badge">1 use</span>
                 <div class="loading-spinner" style="display: none;"></div>
@@ -207,6 +218,9 @@
                 <line x1="12" y1="17" x2="12.01" y2="17"></line>
               </svg>
               Test Your Knowledge
+              <button class="section-info-button" id="quiz-info-button" aria-label="Quiz information" type="button">
+                <span class="info-button__icon">i</span>
+              </button>
               <div class="status-indicator">
                 <span class="usage-badge">1 use</span>
                 <div class="loading-spinner" style="display: none;"></div>
@@ -250,6 +264,9 @@
                 <polyline points="10 9 9 9 8 9"></polyline>
               </svg>
               Notes
+              <button class="section-info-button" id="notes-info-button" aria-label="Notes information" type="button">
+                <span class="info-button__icon">i</span>
+              </button>
             </h3>
             <div class="header-buttons">
               <select id="notes-filter" class="notes-filter">
@@ -326,6 +343,22 @@
             <span class="form-field__description">Switch between light and dark theme</span>
           </div>
           <input type="checkbox" id="setting-dark-mode" />
+          <span class="toggle-switch"></span>
+        </label>
+        <label class="form-field form-field--toggle">
+          <div class="form-field__label-group">
+            <span class="form-field__label">Toggle Highlight-to-Clarify Feature</span>
+            <span class="form-field__description">Enable or disable the highlight-to-clarify feature on webpages</span>
+          </div>
+          <input type="checkbox" id="setting-highlight-clarify" />
+          <span class="toggle-switch"></span>
+        </label>
+        <label class="form-field form-field--toggle">
+          <div class="form-field__label-group">
+            <span class="form-field__label">Toggle Sticky Button</span>
+            <span class="form-field__description">Show or hide the sticky button on webpages</span>
+          </div>
+          <input type="checkbox" id="setting-sticky-button" />
           <span class="toggle-switch"></span>
         </label>
       </div>
@@ -415,7 +448,7 @@
   </dialog>
 
   <!-- Create Account Dialog -->
-  <dialog id="create-account-dialog" class="modal modal--dark">
+  <dialog id="create-account-dialog" class="account-dialog">
     <form class="modal__content" id="create-account-form">
       <header class="modal__header">
         <h2>Create Account</h2>
@@ -568,6 +601,100 @@
         </div>
       </div>
     </div>
+  </dialog>
+
+  <!-- Section Info Dialogs -->
+  <dialog id="summary-info-dialog" class="section-info-dialog">
+    <form method="dialog" class="modal__content">
+      <header class="modal__header">
+        <h2>Summarize this content</h2>
+        <button class="btn btn--ghost modal__close" value="cancel" aria-label="Close">
+          <svg class="icon icon--close" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.05 6.34a1 1 0 0 1 1.41 0L12 9.88l3.54-3.54a1 1 0 1 1 1.41 1.41L13.41 11.3l3.54 3.54a1 1 0 0 1-1.41 1.41L12 12.7l-3.54 3.54a1 1 0 0 1-1.41-1.41l3.54-3.54-3.54-3.54a1 1 0 0 1 0-1.41Z" />
+          </svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <p class="section-info-text">Generate AI-powered summaries of videos, webpages, or PDFs. Get concise, easy-to-understand summaries that help you learn faster. This feature costs 1 use per summary.</p>
+        <div class="section-info-cta">
+          <button id="summary-info-upgrade" class="btn btn--primary" type="button">Get Unlimited Usage</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="flashcard-info-dialog" class="section-info-dialog">
+    <form method="dialog" class="modal__content">
+      <header class="modal__header">
+        <h2>Flashcard Maker</h2>
+        <button class="btn btn--ghost modal__close" value="cancel" aria-label="Close">
+          <svg class="icon icon--close" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.05 6.34a1 1 0 0 1 1.41 0L12 9.88l3.54-3.54a1 1 0 1 1 1.41 1.41L13.41 11.3l3.54 3.54a1 1 0 0 1-1.41 1.41L12 12.7l-3.54 3.54a1 1 0 0 1-1.41-1.41l3.54-3.54-3.54-3.54a1 1 0 0 1 0-1.41Z" />
+          </svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <p class="section-info-text">Create interactive flashcards from any content to help you memorize key concepts. Study smarter with AI-generated flashcards tailored to your learning material. This feature costs 1 use per flashcard set.</p>
+        <div class="section-info-cta">
+          <button id="flashcard-info-upgrade" class="btn btn--primary" type="button">Get Unlimited Usage</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="quiz-info-dialog" class="section-info-dialog">
+    <form method="dialog" class="modal__content">
+      <header class="modal__header">
+        <h2>Test Your Knowledge</h2>
+        <button class="btn btn--ghost modal__close" value="cancel" aria-label="Close">
+          <svg class="icon icon--close" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.05 6.34a1 1 0 0 1 1.41 0L12 9.88l3.54-3.54a1 1 0 1 1 1.41 1.41L13.41 11.3l3.54 3.54a1 1 0 0 1-1.41 1.41L12 12.7l-3.54 3.54a1 1 0 0 1-1.41-1.41l3.54-3.54-3.54-3.54a1 1 0 0 1 0-1.41Z" />
+          </svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <p class="section-info-text">Test your understanding with AI-generated quizzes. Get instant feedback on your knowledge and identify areas that need more study. This feature costs 1 use per quiz.</p>
+        <div class="section-info-cta">
+          <button id="quiz-info-upgrade" class="btn btn--primary" type="button">Get Unlimited Usage</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="notes-info-dialog" class="section-info-dialog">
+    <form method="dialog" class="modal__content">
+      <header class="modal__header">
+        <h2>Notes</h2>
+        <button class="btn btn--ghost modal__close" value="cancel" aria-label="Close">
+          <svg class="icon icon--close" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.05 6.34a1 1 0 0 1 1.41 0L12 9.88l3.54-3.54a1 1 0 1 1 1.41 1.41L13.41 11.3l3.54 3.54a1 1 0 0 1-1.41 1.41L12 12.7l-3.54 3.54a1 1 0 0 1-1.41-1.41l3.54-3.54-3.54-3.54a1 1 0 0 1 0-1.41Z" />
+          </svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <p class="section-info-text">Organize your learning with notes. Save important information, create folders, and keep all your study materials in one place. Notes are free to use and help you stay organized.</p>
+        <div class="section-info-cta">
+          <button id="notes-info-upgrade" class="btn btn--primary" type="button">Get Unlimited Usage</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Quiz Results Dialog -->
+  <dialog id="quiz-results-dialog" class="quiz-results-dialog">
+    <form method="dialog" class="modal__content">
+      <header class="modal__header">
+        <h2 id="quiz-results-title">Quiz Results</h2>
+        <button class="btn btn--ghost modal__close" value="cancel" aria-label="Close results">
+          <svg class="icon icon--close" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.05 6.34a1 1 0 0 1 1.41 0L12 9.88l3.54-3.54a1 1 0 1 1 1.41 1.41L13.41 11.3l3.54 3.54a1 1 0 0 1-1.41 1.41L12 12.7l-3.54 3.54a1 1 0 0 1-1.41-1.41l3.54-3.54-3.54-3.54a1 1 0 0 1 0-1.41Z" />
+          </svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <div id="quiz-results-message" class="quiz-results-message"></div>
+      </div>
+    </form>
   </dialog>
 
   <script src="Source/usageTracker.js"></script>

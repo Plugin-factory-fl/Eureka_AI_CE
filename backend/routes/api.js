@@ -215,9 +215,24 @@ router.post('/quiz', async (req, res) => {
       });
     }
 
+    // Truncate transcript/summary aggressively to avoid token limits
+    // Rough estimate: 4 chars per token, so 4000 chars ≈ 1000 tokens
+    // System prompt is ~500 tokens, so we have ~1500 tokens left for content
+    const maxTranscriptLength = 4000; // ~1000 tokens
+    const maxSummaryLength = 1000; // ~250 tokens
+    const truncatedTranscript = transcript ? transcript.substring(0, maxTranscriptLength) : '';
+    const truncatedSummary = summary ? summary.substring(0, maxSummaryLength) : '';
+    
+    // Use summary if available (shorter), otherwise use truncated transcript
+    const contentToUse = truncatedSummary || truncatedTranscript;
+    
+    if (!contentToUse) {
+      return res.status(400).json({ error: 'Transcript or summary is required' });
+    }
+    
     // Generate quiz
     const contextToUse = difficulty ? `\n\nThe user requests: ${difficulty} difficulty` : '';
-    const systemPrompt = `You are making a quiz about a YouTube video. Create EXACTLY 3 multiple-choice questions that a 5th grader can understand.${contextToUse}
+    const systemPrompt = `You are making a quiz about content (video, webpage, or document). Create EXACTLY 3 multiple-choice questions that a 5th grader can understand.${contextToUse}
 Topic: ${title || 'unknown topic'}
 Follow these rules:
 1. Make EXACTLY 3 questions
@@ -266,7 +281,10 @@ Follow these rules:
 - Make all 3 questions in one response
 - Check that you have exactly 3 questions`;
 
-    const content = summary ? `Transcript: ${transcript || ''}\n\nSummary: ${summary}${contextToUse}` : `Transcript: ${transcript}${contextToUse}`;
+    // Use truncated content to avoid token limits
+    const content = truncatedSummary 
+      ? `Content Summary: ${truncatedSummary}${contextToUse}` 
+      : `Content Transcript: ${truncatedTranscript}${contextToUse}`;
 
     const quiz = await callOpenAI([
       { role: 'system', content: systemPrompt },
@@ -430,7 +448,7 @@ Rules:
  */
 router.post('/chat', async (req, res) => {
   try {
-    const { message, chatHistory } = req.body;
+    const { message, chatHistory, context } = req.body;
     const userId = req.user.userId;
 
     if (!message) {
@@ -466,11 +484,34 @@ router.post('/chat', async (req, res) => {
       });
     }
 
+    // Build system message with context if provided
+    // Truncate context aggressively to avoid token limits
+    // Chat history can be long, so we need to be conservative with context
+    const maxContextLength = 3000; // ~750 tokens, leaving room for chat history
+    const truncatedContext = context ? context.substring(0, maxContextLength) : '';
+    
+    let systemContent = `You are a helpful AI assistant. Give clear, concise answers. Keep responses simple and easy to understand.`;
+    if (truncatedContext) {
+      systemContent += `\n\nCRITICAL: The user has uploaded a PDF document and/or is viewing webpage/video content. `;
+      systemContent += `The context below contains the ACTUAL TEXT CONTENT from these sources. `;
+      systemContent += `You MUST use this content to answer questions. `;
+      systemContent += `If the user asks about chapters, sections, topics, or specific information from the PDF, `;
+      systemContent += `you CAN and MUST reference the actual text content provided below. `;
+      systemContent += `Do NOT say you cannot access the PDF - you have the full text content. `;
+      systemContent += `Do NOT say you need more context - use what is provided below.\n\n`;
+      systemContent += `=== FULL CONTEXT (PDF, WEBPAGE, OR VIDEO CONTENT) ===\n${truncatedContext}`;
+      if (context && context.length > maxContextLength) {
+        systemContent += `\n[Note: Context truncated for length. Original content was ${Math.ceil(context.length / 1000)}k characters.]`;
+      }
+      systemContent += `\n=== END OF CONTEXT ===\n\n`;
+      systemContent += `Remember: You have access to the actual content. Use it to provide specific, detailed answers.`;
+    }
+
     // Build messages array with chat history
     const messages = [
       {
         role: 'system',
-        content: `You are a helpful AI assistant. Give clear, concise answers. Keep responses simple and easy to understand.`
+        content: systemContent
       }
     ];
 
@@ -556,10 +597,18 @@ router.post('/flashcards', async (req, res) => {
       });
     }
 
-    // Clean content text
-    const cleanContent = type === 'video' 
+    // Clean and truncate content text to avoid token limits
+    // Truncate to 4000 chars (~1000 tokens) to leave room for system prompt and response
+    const maxContentLength = 4000;
+    let cleanContent = type === 'video' 
       ? contentText.replace(/\[\d+:\d+\]/g, '').replace(/\s+/g, ' ').trim()
       : contentText.replace(/\s+/g, ' ').trim();
+    
+    // Truncate if too long
+    if (cleanContent.length > maxContentLength) {
+      cleanContent = cleanContent.substring(0, maxContentLength);
+      console.log(`[API] Truncated flashcard content from ${contentText.length} to ${maxContentLength} chars`);
+    }
 
     if (cleanContent.length < 50) {
       return res.status(400).json({ error: 'Content is too short to generate flashcards' });
@@ -640,6 +689,62 @@ Return ONLY the JSON array, no additional text.`;
   } catch (error) {
     console.error('Flashcard generation error:', error);
     res.status(500).json({ error: error.message || 'Failed to generate flashcards' });
+  }
+});
+
+/**
+ * POST /api/extract-pdf-url
+ * Extract text from PDF URL (for Chrome PDF viewer)
+ * Note: Requires pdf-parse package
+ */
+router.post('/extract-pdf-url', async (req, res) => {
+  try {
+    const { pdfUrl } = req.body;
+    const userId = req.user.userId;
+
+    if (!pdfUrl) {
+      return res.status(400).json({ error: 'PDF URL is required' });
+    }
+
+    // Check if pdf-parse is available
+    let pdfParse;
+    try {
+      pdfParse = (await import('pdf-parse')).default;
+    } catch (e) {
+      return res.status(500).json({ 
+        error: 'PDF parsing library not available. Please install pdf-parse: npm install pdf-parse' 
+      });
+    }
+
+    try {
+      // Fetch PDF from URL
+      const pdfResponse = await fetch(pdfUrl);
+      if (!pdfResponse.ok) {
+        throw new Error(`Failed to fetch PDF: ${pdfResponse.status} ${pdfResponse.statusText}`);
+      }
+
+      const pdfBuffer = await pdfResponse.arrayBuffer();
+      
+      // Extract text from PDF
+      const pdfData = await pdfParse(Buffer.from(pdfBuffer));
+      const text = pdfData.text || '';
+
+      if (!text.trim()) {
+        return res.status(400).json({ error: 'Could not extract text from PDF. The PDF may be image-based or encrypted.' });
+      }
+
+      res.json({ 
+        text: text,
+        pages: pdfData.numpages || 0,
+        info: pdfData.info || {}
+      });
+    } catch (parseError) {
+      console.error('PDF parsing error:', parseError);
+      res.status(500).json({ error: 'Failed to parse PDF: ' + parseError.message });
+    }
+  } catch (error) {
+    console.error('PDF extraction error:', error);
+    res.status(500).json({ error: error.message || 'Failed to extract PDF text' });
   }
 });
 

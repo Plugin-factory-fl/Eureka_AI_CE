@@ -489,18 +489,46 @@ if (typeof window.EurekaAIStickyButton !== 'undefined') {
 // Send content info for current page
 sendContentInfo();
 
-// Handle URL changes
+// Handle URL changes - enhanced to catch all navigation types
 let lastUrl = location.href;
-const observer = new MutationObserver(() => {
+
+// Function to trigger content detection when URL changes
+function triggerContentUpdate() {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
     console.log('[Eureka AI] URL changed, updating content info...');
     setTimeout(sendContentInfo, 2000);
   }
+}
+
+// MutationObserver for DOM changes (catches some SPA navigations)
+const observer = new MutationObserver(() => {
+  triggerContentUpdate();
+});
+observer.observe(document, { subtree: true, childList: true });
+
+// Periodic check for URL changes (catches pushState/replaceState)
+setInterval(triggerContentUpdate, 500);
+
+// Listen for popstate (back/forward navigation)
+window.addEventListener('popstate', () => {
+  triggerContentUpdate();
 });
 
-observer.observe(document, { subtree: true, childList: true });
+// Override pushState and replaceState to catch SPA navigation
+const originalPushState = history.pushState;
+const originalReplaceState = history.replaceState;
+
+history.pushState = function(...args) {
+  originalPushState.apply(history, args);
+  triggerContentUpdate();
+};
+
+history.replaceState = function(...args) {
+  originalReplaceState.apply(history, args);
+  triggerContentUpdate();
+};
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

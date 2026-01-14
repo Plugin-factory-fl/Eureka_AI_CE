@@ -9,6 +9,19 @@
   <link rel="stylesheet" href="styles/LoginMenu.css">
   <link rel="stylesheet" href="styles/NotesManager.css">
   <link rel="stylesheet" href="styles/FlashcardMaker.css">
+  <script src="Source/DialogManager.js"></script>
+  <script src="Source/ChatManager.js"></script>
+  <script src="Source/ContentGenerator.js"></script>
+  <script src="Source/TabManager.js"></script>
+  <script src="Source/UsageManager.js"></script>
+  <script src="Source/FileManager.js"></script>
+  <script src="Source/ContentDisplayManager.js"></script>
+  <script src="Source/ButtonHandlers.js"></script>
+  <script src="Source/InfoDialogsManager.js"></script>
+  <script src="Source/UIController.js"></script>
+  <script src="Source/FlashcardUIController.js"></script>
+  <script src="Source/NotesUIController.js"></script>
+  <script src="Source/ClarifyHandler.js"></script>
 </head>
 <body>
   <div class="container">
@@ -47,39 +60,6 @@
     </div>
     
     <div class="content">
-      <!-- Get Pro Button and Uses Counter (Always visible at top) -->
-      <div class="pro-section">
-        <div id="uses-counter" class="uses-counter" style="display: none;">
-          <span id="uses-remaining-text">0 uses remaining</span>
-        </div>
-        <button id="get-pro-button" class="get-pro-button" type="button">
-          Get Pro
-        </button>
-      </div>
-
-      <!-- AI Chat Section (Always Visible) -->
-      <section class="panel__section panel__section--chat" id="chat-section">
-        <div class="chat-container">
-          <div id="chat-messages" class="chat-messages"></div>
-          <div class="pdf-upload-container">
-            <button id="upload-pdf-button" class="btn btn--secondary" type="button">
-              Upload PDF for Context
-            </button>
-            <input type="file" id="pdf-upload-input" accept=".pdf" style="display: none;">
-            <span id="pdf-upload-status" class="pdf-upload-status" style="display: none;"></span>
-          </div>
-          <div class="chat-input-container">
-            <input type="text" id="question-input" class="question-input" placeholder="Ask a question about the content...">
-            <button id="send-question" class="send-question">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </section>
-
       <div id="loading" class="state">
         <div class="spinner"></div>
         <p>Checking for YouTube video...</p>
@@ -110,7 +90,64 @@
           </button>
         </div>
         
-        <div id="summary-container" class="summary-container hidden">
+        <!-- Tab Content Containers -->
+        <!-- Chat Tab -->
+        <div class="tab-content active" id="tab-chat">
+          <section class="panel__section panel__section--chat" id="chat-section">
+            <div class="chat-container">
+              <div id="chat-messages" class="chat-messages">
+                <div id="chat-suggestions" class="chat-suggestions"></div>
+              </div>
+              <div id="screenshot-preview" class="screenshot-preview" style="display: none;">
+                <div class="screenshot-preview-content">
+                  <img id="screenshot-preview-img" src="" alt="Screenshot preview" style="max-width: 100%; border-radius: 8px;">
+                  <button id="screenshot-preview-remove" class="screenshot-preview-remove" type="button" aria-label="Remove screenshot">×</button>
+                  <span class="screenshot-preview-text">Screenshot will be sent with your message</span>
+                </div>
+              </div>
+              <div class="chat-input-container">
+                <div class="chat-input-buttons">
+                  <button id="upload-file-button" class="chat-icon-button" type="button" aria-label="Upload file">
+                    📎
+                    <span class="tooltip">Upload file</span>
+                  </button>
+                  <input type="file" id="file-upload-input" accept="*" style="display: none;">
+                  <button id="screenshot-button" class="chat-icon-button" type="button" aria-label="Take screenshot">
+                    ✂️
+                    <span class="tooltip">Capture area</span>
+                  </button>
+                  <button id="read-button" class="chat-icon-button" type="button" aria-label="Read entire webpage">
+                    📖
+                    <span class="tooltip">Read page</span>
+                  </button>
+                </div>
+                <input type="text" id="question-input" class="question-input" placeholder="Ask a question about the content...">
+                <button id="send-question" class="send-question">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </div>
+              <div class="file-upload-status-container">
+                <span id="file-upload-status" class="file-upload-status" style="display: none;"></span>
+              </div>
+            </div>
+          </section>
+        </div>
+        
+        <!-- Tab Navigation (Below Chat) -->
+        <div class="tab-navigation">
+          <button class="tab-button active" data-tab="chat">Chat</button>
+          <button class="tab-button" data-tab="summarize">Summarize</button>
+          <button class="tab-button" data-tab="flashcards">Flashcards</button>
+          <button class="tab-button" data-tab="quiz">Quiz</button>
+          <button class="tab-button" data-tab="notes">Notes</button>
+        </div>
+        
+        <!-- Summarize Tab -->
+        <div class="tab-content" id="tab-summarize">
+          <div id="summary-container" class="summary-container" style="display: block;">
           <div class="summary-header" id="summary-header">
             <h3>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -173,8 +210,10 @@
             </div>
           </div>
         </div>
-
-        <div id="flashcard-container" class="flashcard-container">
+        
+        <!-- Flashcards Tab -->
+        <div class="tab-content" id="tab-flashcards">
+          <div id="flashcard-container" class="flashcard-container">
           <div class="flashcard-header" id="flashcard-header">
             <h3>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -201,15 +240,17 @@
               </button>
             </div>
           </div>
-          <div id="flashcard-content" class="flashcard-content collapsed" style="display: none;">
+          <div id="flashcard-content" class="flashcard-content">
             <div id="flashcard-list" class="flashcard-list"></div>
-            <div id="flashcard-empty" class="flashcard-empty hidden">
+            <div id="flashcard-empty" class="flashcard-empty">
               <p class="flashcard-empty__text">No flashcards yet. Generate flashcards from the current content!</p>
             </div>
           </div>
         </div>
-
-        <div id="quiz-container" class="quiz-container">
+        
+        <!-- Quiz Tab -->
+        <div class="tab-content" id="tab-quiz">
+          <div id="quiz-container" class="quiz-container">
           <div class="quiz-header" id="quiz-header">
             <h3>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -250,10 +291,17 @@
               </button>
             </div>
           </div>
-          <div id="quiz-content" class="quiz-content collapsed" style="display: none;">Generating questions...</div>
+          <div id="quiz-content" class="quiz-content">
+            <div id="quiz-questions-container" style="display: none;"></div>
+            <div id="quiz-empty" class="quiz-empty">
+              <p class="quiz-empty__text">No quiz yet. Generate a quiz from the current content!</p>
+            </div>
+          </div>
         </div>
-
-        <div id="notes-container" class="notes-container">
+        
+        <!-- Notes Tab -->
+        <div class="tab-content" id="tab-notes">
+          <div id="notes-container" class="notes-container">
           <div class="notes-header" id="notes-header">
             <h3>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -288,6 +336,16 @@
             </div>
           </div>
         </div>
+      </div>
+      
+      <!-- Get Pro Button and Uses Counter (Always visible at bottom) -->
+      <div class="pro-section">
+        <div id="uses-counter" class="uses-counter">
+          <span id="uses-remaining-text">0 uses remaining</span>
+        </div>
+        <button id="get-pro-button" class="get-pro-button" type="button">
+          Get Pro
+        </button>
       </div>
     </div>
   </div>

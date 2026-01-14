@@ -1,6 +1,5 @@
 /**
  * Settings Panel Styles
- * Adapted from PromptProfile for SumVid Learn
  */
 
 #settings-dialog {
@@ -30,13 +29,13 @@
 .form-field__label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--settings-text-secondary);
+  color: #333333;
   margin-bottom: 4px;
 }
 
 .form-field__description {
   font-size: 12px;
-  color: var(--settings-text-subtle);
+  color: #666666;
   line-height: 1.5;
 }
 
@@ -109,28 +108,17 @@
   border-radius: 12px;
 }
 
-.modal--dark .form-field__label,
-.modal--dark .form-field__description {
-  color: var(--settings-text-secondary);
-}
-
-/* Modal styles */
-.modal {
-  background: rgba(0, 0, 0, 0.7);
-  border: none;
-  padding: 0;
-}
-
 .modal__content {
-  background: var(--settings-bg-primary);
-  border-radius: 10px;
+  background: #ffffff;
+  border-radius: 12px;
   padding: 0;
-  max-width: 480px;
-  width: 90vw;
+  max-width: 100%;
+  width: 100%;
   max-height: 90vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
 .modal__header {
@@ -138,19 +126,22 @@
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid var(--settings-border);
+  border-bottom: 1px solid #e0e0e0;
+  background: #ffffff;
 }
 
 .modal__header h2 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #ffffff;
+  color: #333333;
 }
 
 .modal__body {
   padding: 24px;
   overflow-y: auto;
+  background: #ffffff;
+  color: #333333;
 }
 
 .modal__footer {
@@ -158,12 +149,13 @@
   justify-content: flex-end;
   gap: 12px;
   padding: 20px 24px;
-  border-top: 1px solid var(--settings-border);
+  border-top: 1px solid #e0e0e0;
+  background: #ffffff;
 }
 
-/* Settings Dialog Styles */
+/* Simple dialog styling - native behavior */
 .settings-dialog {
-  background: rgba(0, 0, 0, 0.85);
+  background: transparent;
   border: none;
   padding: 0;
   margin: auto;
@@ -188,6 +180,9 @@
   display: flex;
   flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  position: relative;
+  z-index: 2147483648 !important; /* Above backdrop */
+  pointer-events: auto !important;
 }
 
 .settings-dialog .modal__header {
@@ -210,6 +205,15 @@
   padding: 24px;
   overflow-y: auto;
   background: #ffffff;
+  color: #333333;
+}
+
+.settings-dialog .form-field__label {
+  color: #333333;
+}
+
+.settings-dialog .form-field__description {
+  color: #666666;
 }
 
 .settings-dialog .modal__footer {
@@ -219,20 +223,6 @@
   padding: 20px 24px;
   border-top: 1px solid #e0e0e0;
   background: #ffffff;
-}
-
-.settings-dialog .form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.settings-dialog .form-field__label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #333333;
-  margin-bottom: 4px;
 }
 
 .settings-dialog .btn {
@@ -328,41 +318,45 @@
   transform: translateX(20px);
 }
 
-.modal__close {
-  padding: 4px;
+/* Dark mode support */
+[data-theme="dark"] .settings-dialog .modal__content {
+  background: #2d2d2d;
 }
 
-.icon--close {
-  width: 20px;
-  height: 20px;
-  fill: currentColor;
+[data-theme="dark"] .settings-dialog .modal__header {
+  background: #2d2d2d;
+  border-bottom-color: #404040;
 }
 
-.btn {
-  padding: 10px 20px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-  transition: all var(--settings-transition-speed) ease;
-}
-
-.btn--ghost {
-  background: transparent;
-  color: var(--settings-text-secondary);
-}
-
-.btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.1);
+[data-theme="dark"] .settings-dialog .modal__header h2 {
   color: #ffffff;
 }
 
-.btn--primary {
-  background: #A855F7;
+[data-theme="dark"] .settings-dialog .modal__body {
+  background: #2d2d2d;
   color: #ffffff;
 }
 
-.btn--primary:hover {
-  background: #9333ea;
+[data-theme="dark"] .settings-dialog .modal__footer {
+  background: #2d2d2d;
+  border-top-color: #404040;
+}
+
+[data-theme="dark"] .settings-dialog .form-field__label {
+  color: #ffffff;
+}
+
+[data-theme="dark"] .settings-dialog .form-field__description {
+  color: #cccccc;
+}
+
+[data-theme="dark"] .settings-dialog .btn--ghost {
+  color: #cccccc;
+}
+
+[data-theme="dark"] .settings-dialog .btn--ghost:hover {
+  background: #404040;
+  color: #ffffff;
+}[data-theme="dark"] .settings-dialog .modal__close {
+  color: #cccccc;
 }

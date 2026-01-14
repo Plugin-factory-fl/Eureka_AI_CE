@@ -570,6 +570,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     sendResponse({ success: true });
     return true;
+  } else if (message.action === 'capture-screenshot') {
+    // Handle screenshot capture - forward to content script for cropping
+    (async () => {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tabs[0]) {
+          sendResponse({ success: false, error: 'No active tab found' });
+          return;
+        }
+        
+        // Capture visible tab
+        const dataUrl = await chrome.tabs.captureVisibleTab(null, {
+          format: 'png',
+          quality: 100
+        });
+        
+        // Send to content script to crop
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'crop-screenshot',
+          imageData: dataUrl,
+          bounds: message.bounds
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            sendResponse(response || { success: false, error: 'No response from content script' });
+          }
+        });
+      } catch (error) {
+        console.error('[Eureka AI] Screenshot capture error:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  } else if (message.action === 'screenshot-captured') {
+    // Store screenshot in storage for sidebar to pick up
+    (async () => {
+      await chrome.storage.local.set({
+        capturedScreenshot: {
+          imageData: message.imageData,
+          timestamp: Date.now()
+        }
+      });
+      sendResponse({ success: true });
+    })();
+    return true;
   }
   return true;
 });

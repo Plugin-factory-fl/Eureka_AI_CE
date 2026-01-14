@@ -334,25 +334,46 @@ async function updateStatusCard() {
   }
 }
 
+let accountHandlersInitialized = false;
+
 /**
  * Registers event handlers for the account login dialog
  */
 function registerAccountHandlers() {
-  const accountDialog = document.getElementById('account-dialog');
+  // Prevent multiple initializations
+  if (accountHandlersInitialized) {
+    return;
+  }
+  accountHandlersInitialized = true;
+
+  let accountDialog = document.getElementById('account-dialog');
   const accountTrigger = document.getElementById('open-account');
   const accountForm = document.getElementById('account-form');
-  const createAccountLink = document.getElementById('open-create-account');
-  const createAccountDialog = document.getElementById('create-account-dialog');
+  let createAccountDialog = document.getElementById('create-account-dialog');
   const createAccountForm = document.getElementById('create-account-form');
+  const createAccountLink = document.getElementById('open-create-account');
   const forgotPasswordButton = document.getElementById('forgot-password');
-  const forgotPasswordEmailDialog = document.getElementById('forgot-password-email-dialog');
+  let forgotPasswordEmailDialog = document.getElementById('forgot-password-email-dialog');
   const forgotPasswordEmailForm = document.getElementById('forgot-password-email-form');
-  const resetPasswordDialog = document.getElementById('forgot-password-reset-dialog');
+  let resetPasswordDialog = document.getElementById('forgot-password-reset-dialog');
   const resetPasswordForm = document.getElementById('forgot-password-reset-form');
 
   if (!accountDialog || !accountTrigger || !accountForm) {
-    console.warn('[LoginMenu] Missing required elements');
     return;
+  }
+  
+  // Move all dialogs to body immediately to escape all containers
+  if (accountDialog && accountDialog.parentElement !== document.body) {
+    document.body.appendChild(accountDialog);
+  }
+  if (createAccountDialog && createAccountDialog.parentElement !== document.body) {
+    document.body.appendChild(createAccountDialog);
+  }
+  if (forgotPasswordEmailDialog && forgotPasswordEmailDialog.parentElement !== document.body) {
+    document.body.appendChild(forgotPasswordEmailDialog);
+  }
+  if (resetPasswordDialog && resetPasswordDialog.parentElement !== document.body) {
+    document.body.appendChild(resetPasswordDialog);
   }
 
   const loggedInView = document.getElementById('account-logged-in-view');
@@ -360,11 +381,48 @@ function registerAccountHandlers() {
   const switchAccountButton = document.getElementById('switch-account');
   const upgradeButton = document.getElementById('upgrade-button');
 
-  // Open account dialog
-  accountTrigger.addEventListener('click', async () => {
-    await updateLoggedInView();
-    accountDialog.showModal();
+  // Open account dialog - simplified
+  accountTrigger.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (accountDialog.open) {
+      accountDialog.close();
+      return;
+    }
+
+    // Update view before showing
+    updateLoggedInView().then(() => {
+      accountDialog.showModal();
+    }).catch(() => {
+      // Even if update fails, show dialog
+      accountDialog.showModal();
+    });
   });
+
+  // Handle backdrop click for account dialog
+  accountDialog.addEventListener('click', (e) => {
+    if (e.target === accountDialog) {
+      accountDialog.close();
+    }
+  });
+
+  // Prevent clicks inside account dialog from closing it
+  const accountDialogContent = accountDialog.querySelector('.modal__content');
+  if (accountDialogContent) {
+    accountDialogContent.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  // Handle close button for account dialog
+  const accountCloseButton = accountDialog.querySelector('.account__cancel, .modal__close');
+  if (accountCloseButton) {
+    accountCloseButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      accountDialog.close();
+    });
+  }
 
   // Handle switch account button
   if (switchAccountButton) {

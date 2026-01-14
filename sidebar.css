@@ -61,7 +61,7 @@ body {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100%;
+  height: 100vh;
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   border-radius: 12px;
@@ -157,6 +157,9 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: relative;
+  z-index: 9999 !important; /* Ensure header is always on top */
+  pointer-events: auto !important;
   padding: 12px 16px;
   border-radius: var(--radius-md);
   background: linear-gradient(135deg, #f8f4ff 0%, #e8d5ff 100%);
@@ -396,12 +399,17 @@ input:checked + .slider:before {
 }
 
 .content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
   padding: 16px;
-  flex-grow: 1;
-  overflow-y: auto;
+  padding-bottom: 0; /* Remove bottom padding to allow pro-section to sit at bottom */
   background-color: #f5f5f5;
   margin-top: 0;
   padding-top: 16px;
+  min-height: 0;
 }
 
 [data-theme="dark"] .content {
@@ -858,13 +866,27 @@ input:checked + .slider:before {
 }
 
 .summary-content.collapsed,
-.quiz-content.collapsed {
+.quiz-content.collapsed,
+.flashcard-content.collapsed,
+.notes-content.collapsed {
   max-height: 0;
   opacity: 0;
   padding: 0;
   margin: 0;
   overflow: hidden;
   border: none;
+}
+
+/* Override collapsed state when tab is active */
+#tab-flashcards.active .flashcard-content.collapsed,
+#tab-quiz.active .quiz-content.collapsed,
+#tab-notes.active .notes-content.collapsed {
+  max-height: none !important;
+  opacity: 1 !important;
+  padding: 16px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  display: block !important;
 }
 
 .quiz-button {
@@ -1272,19 +1294,32 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  /* Animation removed - was causing size transformation */
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 3px; /* Space for glow at bottom - 3px margin to input bar */
+  padding-left: 8px; /* Space for glow on sides */
+  padding-right: 8px; /* Space for glow on sides */
+  padding-top: 8px; /* Space for glow on top */
+  animation: chat-pulse 2s ease-in-out infinite;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  overflow: visible; /* Allow glow to extend beyond container */
 }
 
 .chat-messages {
-  display: flex;
+  display: flex !important;
   flex-direction: column;
   gap: 12px;
-  min-height: 100px;
-  max-height: 300px;
+  flex: 1;
   overflow-y: auto;
   background: var(--bg-secondary);
   padding: 12px;
   border-radius: 8px;
+  min-height: 0; /* Let flex handle sizing */
+  max-height: none;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .chat-message {
@@ -1400,7 +1435,13 @@ input:checked + .slider:before {
 .chat-input-container {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: auto; /* Push to bottom */
+  margin-bottom: 0; /* No margin - padding-bottom of chat-container handles spacing */
+  position: relative;
+  z-index: 10;
+  background: var(--bg-primary);
+  padding: 8px 0;
+  flex-shrink: 0;
 }
 
 .question-input {
@@ -1609,10 +1650,14 @@ input:checked + .slider:before {
 }
 
 .panel__section--chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
   padding: 12px 16px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   background: var(--bg-primary);
-  animation: chat-pulse 3s ease-in-out infinite;
   border-radius: 8px;
   margin: 8px 0;
   transform: none !important; /* Prevent any size/transform changes */
@@ -1620,7 +1665,6 @@ input:checked + .slider:before {
   min-width: 100% !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
-  will-change: box-shadow; /* Optimize for box-shadow animation only */
 }
 
 [data-theme="dark"] .panel__section--chat {
@@ -1630,11 +1674,13 @@ input:checked + .slider:before {
 
 @keyframes chat-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.2);
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.2), 
+                0 0 0 0 rgba(168, 85, 247, 0.1) inset;
     border-color: rgba(168, 85, 247, 0.1);
   }
   50% {
-    box-shadow: 0 0 20px 8px rgba(168, 85, 247, 0.3);
+    box-shadow: 0 0 20px 8px rgba(168, 85, 247, 0.3),
+                0 0 10px 4px rgba(168, 85, 247, 0.15) inset;
     border-color: rgba(168, 85, 247, 0.3);
   }
 }
@@ -1685,10 +1731,28 @@ input:checked + .slider:before {
 }
 
 .pro-section {
-  margin: 12px 16px;
-  display: flex;
+  margin: 0;
+  padding: 12px 16px;
+  display: flex !important;
   flex-direction: column;
   gap: 8px;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--bg-primary);
+  z-index: 200;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+[data-theme="dark"] .pro-section {
+  background: var(--bg-primary);
+  border-top-color: var(--border-color);
 }
 
 .uses-counter {
@@ -1700,6 +1764,7 @@ input:checked + .slider:before {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
+  display: block !important; /* Always visible by default */
 }
 
 #uses-remaining-text {
@@ -1859,6 +1924,9 @@ input:checked + .slider:before {
   align-items: center;
   gap: 10px;
   margin-left: auto;
+  position: relative;
+  z-index: 9999 !important; /* Ensure header buttons are always clickable */
+  pointer-events: auto !important;
 }
 
 .btn {
@@ -1926,3 +1994,411 @@ input:checked + .slider:before {
   width: 20px;
   height: 20px;
 }
+
+/* Tab Navigation - Fixed Footer */
+.tab-navigation {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  border-top: 2px solid var(--border-color);
+  background: var(--bg-primary);
+  position: fixed;
+  bottom: 80px; /* Above pro-section (80px) */
+  left: 0;
+  right: 0;
+  z-index: 150;
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+[data-theme="dark"] .tab-navigation {
+  background: var(--bg-primary);
+  border-top-color: var(--border-color);
+}
+
+.tab-button {
+  flex: 1;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: -2px;
+}
+
+.tab-button:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border-radius: 6px 6px 0 0;
+}
+
+.tab-button.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+  font-weight: 600;
+}
+
+[data-theme="dark"] .tab-button.active {
+  color: #c084fc;
+  border-bottom-color: #c084fc;
+}
+
+/* Tab Content */
+.tab-content {
+  display: none !important;
+  width: 100%;
+  padding-bottom: 200px; /* Space for tab footer (80px) and pro-section (100px) + 20px gap */
+}
+
+.tab-content.active {
+  display: flex !important;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  padding-bottom: 200px; /* Space for tab footer (80px) and pro-section (100px) + 20px gap */
+}
+
+#tab-chat.active {
+  display: flex !important;
+  padding-bottom: 88px; /* 8px above tab footer (80px) - accounts for glow padding */
+  overflow: visible; /* Allow glow to extend */
+}
+
+/* Ensure dialogs always work - override any tab-specific stacking contexts */
+dialog[open] {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: auto !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: auto !important;
+}
+
+dialog[open]::backdrop {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 2147483646 !important;
+  background: rgba(0, 0, 0, 0.85) !important;
+  backdrop-filter: blur(4px) !important;
+  pointer-events: auto !important;
+}
+
+/* Ensure dialog content is always clickable */
+dialog[open] > * {
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1;
+}
+
+/* Override any inline styles that might conflict */
+.tab-content.active[style*="display: none"] {
+  display: flex !important;
+}
+
+/* Hide chat section when other tabs are active */
+#tab-chat:not(.active) {
+  display: none !important;
+}
+
+/* Ensure other tab contents are visible when active */
+#tab-summarize.active,
+#tab-flashcards.active,
+#tab-quiz.active,
+#tab-notes.active {
+  display: flex !important;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 16px;
+  padding-bottom: 200px; /* Space for tab footer and pro-section */
+}
+
+/* Make sure content sections are visible when their tab is active */
+#tab-flashcards.active #flashcard-container,
+#tab-flashcards.active #flashcard-content,
+#tab-quiz.active #quiz-container,
+#tab-quiz.active #quiz-content,
+#tab-notes.active #notes-container,
+#tab-notes.active #notes-content {
+  display: block !important;
+  max-height: none !important;
+  opacity: 1 !important;
+  padding: 16px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  border: none !important;
+  visibility: visible !important;
+}
+
+#tab-flashcards.active #flashcard-empty,
+#tab-quiz.active #quiz-empty,
+#tab-notes.active #note-empty {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Ensure empty states are visible by default when tab is active */
+.flashcard-empty,
+.quiz-empty,
+.note-empty {
+  display: block;
+  padding: 20px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+#tab-flashcards.active .flashcard-empty,
+#tab-quiz.active .quiz-empty,
+#tab-notes.active .note-empty {
+  display: block !important;
+}
+
+/* Remove collapsed class when tab is active */
+#tab-flashcards.active #flashcard-content.collapsed,
+#tab-flashcards.active #flashcard-container.collapsed,
+#tab-quiz.active #quiz-content.collapsed,
+#tab-quiz.active #quiz-container.collapsed,
+#tab-notes.active #notes-content.collapsed,
+#tab-notes.active #notes-container.collapsed {
+  max-height: none !important;
+  opacity: 1 !important;
+  padding: 16px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  border: none !important;
+  visibility: visible !important;
+}
+
+/* Chat Icon Buttons */
+.chat-input-buttons {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.chat-icon-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.chat-icon-button .tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  padding: 6px 12px;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-size: 12px;
+  white-space: nowrap;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.chat-icon-button .tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--text-primary);
+}
+
+.chat-icon-button:hover .tooltip {
+  opacity: 1;
+}
+
+[data-theme="dark"] .chat-icon-button .tooltip {
+  background: #2d2d2d;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .chat-icon-button .tooltip::after {
+  border-top-color: #2d2d2d;
+}
+
+.chat-icon-button:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-color);
+  transform: scale(1.05);
+}
+
+.chat-icon-button:active {
+  transform: scale(0.95);
+}
+
+[data-theme="dark"] .chat-icon-button {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .chat-icon-button:hover {
+  background: var(--color-surface-alt);
+  border-color: #c084fc;
+}
+
+.file-upload-status-container {
+  margin-top: 8px;
+}
+
+.file-upload-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.file-upload-status.loaded {
+  color: #10b981;
+}
+
+/* Chat Suggestions */
+.chat-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+
+.chat-suggestions.hidden {
+  display: none;
+}
+
+.suggestion-card {
+  padding: 12px 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.suggestion-card:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-color);
+  transform: translateX(4px);
+}
+
+[data-theme="dark"] .suggestion-card {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .suggestion-card:hover {
+  background: var(--color-surface-alt);
+  border-color: #c084fc;
+}
+
+/* Screenshot Preview */
+.screenshot-preview {
+  margin: 8px 0;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.screenshot-preview-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.screenshot-preview-img {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.screenshot-preview-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.screenshot-preview-remove:hover {
+  background: rgba(0, 0, 0, 0.9);
+  transform: scale(1.1);
+}
+
+.screenshot-preview-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  font-style: italic;
+}
+
+[data-theme="dark"] .screenshot-preview {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+#video-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+}
+

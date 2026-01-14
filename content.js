@@ -607,5 +607,170 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+  // Screenshot overlay functionality
+  if (message.action === 'start-screenshot') {
+    (async () => {
+      try {
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'eureka-screenshot-overlay';
+        overlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 999999;
+          cursor: crosshair;
+        `;
+        
+        let isSelecting = false;
+        let startX = 0;
+        let startY = 0;
+        let selectionBox = null;
+        
+        // Create selection box
+        selectionBox = document.createElement('div');
+        selectionBox.style.cssText = `
+          position: absolute;
+          border: 2px dashed #A855F7;
+          background: rgba(168, 85, 247, 0.1);
+          pointer-events: none;
+          display: none;
+        `;
+        overlay.appendChild(selectionBox);
+        
+        // Mouse down - start selection
+        overlay.addEventListener('mousedown', (e) => {
+          isSelecting = true;
+          startX = e.clientX;
+          startY = e.clientY;
+          selectionBox.style.display = 'block';
+          selectionBox.style.left = startX + 'px';
+          selectionBox.style.top = startY + 'px';
+          selectionBox.style.width = '0px';
+          selectionBox.style.height = '0px';
+        });
+        
+        // Mouse move - update selection
+        overlay.addEventListener('mousemove', (e) => {
+          if (!isSelecting) return;
+          
+          const currentX = e.clientX;
+          const currentY = e.clientY;
+          
+          const left = Math.min(startX, currentX);
+          const top = Math.min(startY, currentY);
+          const width = Math.abs(currentX - startX);
+          const height = Math.abs(currentY - startY);
+          
+          selectionBox.style.left = left + 'px';
+          selectionBox.style.top = top + 'px';
+          selectionBox.style.width = width + 'px';
+          selectionBox.style.height = height + 'px';
+        });
+        
+        // Mouse up - capture screenshot
+        overlay.addEventListener('mouseup', async (e) => {
+          if (!isSelecting) return;
+          isSelecting = false;
+          
+          const endX = e.clientX;
+          const endY = e.clientY;
+          
+          const left = Math.min(startX, endX);
+          const top = Math.min(startY, endY);
+          const width = Math.abs(endX - startX);
+          const height = Math.abs(endY - startY);
+          
+          // Remove overlay
+          overlay.remove();
+          
+          // Capture screenshot via background script
+          if (width > 10 && height > 10) {
+            chrome.runtime.sendMessage({
+              action: 'capture-screenshot',
+              bounds: { left, top, width, height }
+            });
+          }
+        });
+        
+        // Cancel on Escape
+        document.addEventListener('keydown', function escapeHandler(e) {
+          if (e.key === 'Escape') {
+            overlay.remove();
+            document.removeEventListener('keydown', escapeHandler);
+          }
+        });
+        
+        document.body.appendChild(overlay);
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('Error starting screenshot:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+  
+  // Extract full content
+  if (message.action === 'extract-full-content') {
+    (async () => {
+      try {
+        const content = document.body.innerText || document.body.textContent || '';
+        sendResponse({ success: true, content });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+  
+  // Crop screenshot (called from background script)
+  if (message.action === 'crop-screenshot') {
+    (async () => {
+      try {
+        const img = new Image();
+        img.src = message.imageData;
+        
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+        
+        // Create canvas to crop
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const bounds = message.bounds;
+        
+        canvas.width = bounds.width;
+        canvas.height = bounds.height;
+        
+        // Draw cropped portion
+        ctx.drawImage(
+          img,
+          bounds.left, bounds.top, bounds.width, bounds.height,
+          0, 0, bounds.width, bounds.height
+        );
+        
+        // Convert to base64
+        const croppedDataUrl = canvas.toDataURL('image/png');
+        
+        // Send to sidebar
+        chrome.runtime.sendMessage({
+          action: 'screenshot-captured',
+          imageData: croppedDataUrl
+        });
+        
+        sendResponse({ success: true, imageData: croppedDataUrl });
+      } catch (error) {
+        console.error('Error cropping screenshot:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+  
   return false;
 });

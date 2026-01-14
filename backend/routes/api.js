@@ -823,4 +823,135 @@ router.post('/extract-pdf', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/process-file
+ * Process uploaded file (PDF, image, etc.) and extract content
+ * Uses gpt-4-turbo for images with vision capabilities
+ */
+router.post('/process-file', async (req, res) => {
+  try {
+    // Check if multer is available
+    let multer;
+    try {
+      multer = (await import('multer')).default;
+    } catch (e) {
+      return res.status(500).json({ 
+        error: 'File upload middleware not available. Please install multer: npm install multer' 
+      });
+    }
+
+    // Configure multer for memory storage
+    const upload = multer({ 
+      storage: multer.memoryStorage(),
+      limits: { fileSize: 20 * 1024 * 1024 } // 20MB limit
+    });
+
+    // Handle file upload
+    const uploadMiddleware = upload.single('file');
+    
+    uploadMiddleware(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({ error: err.message || 'File upload error' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file provided' });
+      }
+
+      try {
+        const file = req.file;
+        const fileType = file.mimetype;
+        
+        // Handle PDF files
+        if (fileType === 'application/pdf') {
+          let pdfParse;
+          try {
+            pdfParse = (await import('pdf-parse')).default;
+          } catch (e) {
+            return res.status(500).json({ 
+              error: 'PDF parsing library not available. Please install pdf-parse: npm install pdf-parse' 
+            });
+          }
+          
+          const pdfData = await pdfParse(file.buffer);
+          const text = pdfData.text || '';
+          
+          if (!text.trim()) {
+            return res.status(400).json({ error: 'Could not extract text from PDF. The PDF may be image-based or encrypted.' });
+          }
+          
+          return res.json({ 
+            text: text,
+            fileType: fileType,
+            filename: file.originalname
+          });
+        }
+        
+        // Handle image files (use gpt-4-turbo with vision)
+        if (fileType.startsWith('image/')) {
+          // Convert image to base64
+          const base64Image = file.buffer.toString('base64');
+          const dataUrl = `data:${fileType};base64,${base64Image}`;
+          
+          // Use gpt-4-turbo for image analysis
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+              model: 'gpt-4-turbo',
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'text',
+                      text: 'Please describe this image in detail, including any text visible in the image.'
+                    },
+                    {
+                      type: 'image_url',
+                      image_url: {
+                        url: dataUrl
+                      }
+                    }
+                  ]
+                }
+              ],
+              max_tokens: 1000
+            })
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`OpenAI API error: ${errorText}`);
+          }
+          
+          const data = await response.json();
+          const description = data.choices[0].message.content;
+          
+          return res.json({
+            text: description,
+            imageData: dataUrl,
+            fileType: fileType,
+            filename: file.originalname
+          });
+        }
+        
+        // For other file types, return error
+        return res.status(400).json({ 
+          error: `Unsupported file type: ${fileType}. Supported types: PDF, images (PNG, JPEG, etc.)` 
+        });
+      } catch (processError) {
+        console.error('File processing error:', processError);
+        res.status(500).json({ error: 'Failed to process file: ' + processError.message });
+      }
+    });
+  } catch (error) {
+    console.error('File processing error:', error);
+    res.status(500).json({ error: error.message || 'Failed to process file' });
+  }
+});
+
 export default router;

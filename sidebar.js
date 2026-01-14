@@ -35,6 +35,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const questionInput = document.getElementById('question-input');
   const sendQuestionButton = document.getElementById('send-question');
   const chatMessages = document.getElementById('chat-messages');
+  const chatSuggestions = document.getElementById('chat-suggestions');
+  
+  // Tab system
+  const tabButtons = document.querySelectorAll('.tab-button');
+  const tabContents = document.querySelectorAll('.tab-content');
+  let activeTab = 'chat';
   
   const summaryContextBar = document.getElementById('summary-context-bar');
   const summaryContextInput = document.getElementById('summary-context-input');
@@ -64,76 +70,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Function to save generated content to storage
+  // Content caching functions (delegated to ContentGenerator)
   async function saveGeneratedContent(videoId, type, content) {
-    if (!videoId) return;
-    
-    const key = `${type}_${videoId}`;
-    const data = {
-      content: content,
-      timestamp: Date.now(),
-      videoId: videoId
-    };
-    
-    try {
-      await chrome.storage.local.set({ [key]: data });
-      console.log(`Saved ${type} for video ${videoId}`);
-    } catch (error) {
-      console.error(`Error saving ${type}:`, error);
+    if (contentGenerator) {
+      await contentGenerator.saveGeneratedContent(videoId, type, content);
     }
   }
 
-  // Function to load generated content from storage
   async function loadGeneratedContent(videoId, type) {
-    if (!videoId) return null;
-    
-    const key = `${type}_${videoId}`;
-    
-    try {
-      const result = await chrome.storage.local.get([key]);
-      const data = result[key];
-      
-      if (!data) return null;
-      
-      // Check if content has expired
-      if (Date.now() - data.timestamp > CACHE_EXPIRY_TIME) {
-        // Remove expired content
-        await chrome.storage.local.remove([key]);
-        return null;
-      }
-      
-      return data.content;
-    } catch (error) {
-      console.error(`Error loading ${type}:`, error);
-      return null;
+    if (contentGenerator) {
+      return await contentGenerator.loadGeneratedContent(videoId, type);
     }
+    return null;
   }
-
-  // Function to clear expired cached content
-  async function clearExpiredContent() {
-    try {
-      const allData = await chrome.storage.local.get(null);
-      const keysToRemove = [];
-      
-      for (const [key, value] of Object.entries(allData)) {
-        if (key.startsWith('summary_') || key.startsWith('quiz_') || key.startsWith('chat_')) {
-          if (value.timestamp && Date.now() - value.timestamp > CACHE_EXPIRY_TIME) {
-            keysToRemove.push(key);
-          }
-        }
-      }
-      
-      if (keysToRemove.length > 0) {
-        await chrome.storage.local.remove(keysToRemove);
-        console.log(`Cleared ${keysToRemove.length} expired cache entries`);
-      }
-    } catch (error) {
-      console.error('Error clearing expired content:', error);
-    }
-  }
-
-  // Clear expired content on startup
-  clearExpiredContent();
 
   // Function to show tooltip on regenerate quiz button
   function showRegenerateTooltip() {
@@ -237,8 +186,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Utility functions - make globally accessible for modules
   function showLoadingIndicator(container) {
-    const statusIndicator = container.querySelector('.status-indicator');
+    const statusIndicator = container?.querySelector('.status-indicator');
     if (statusIndicator) {
       const spinner = statusIndicator.querySelector('.loading-spinner');
       const badge = statusIndicator.querySelector('.completion-badge');
@@ -248,9 +198,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
   }
+  window.showLoadingIndicator = showLoadingIndicator;
 
   function showCompletionBadge(container) {
-    const statusIndicator = container.querySelector('.status-indicator');
+    const statusIndicator = container?.querySelector('.status-indicator');
     if (statusIndicator) {
       const spinner = statusIndicator.querySelector('.loading-spinner');
       const badge = statusIndicator.querySelector('.completion-badge');
@@ -260,490 +211,95 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
   }
+  window.showCompletionBadge = showCompletionBadge;
 
 
-  // Theme handling
-  if (themeToggle) {
-    chrome.storage.local.get(['darkMode'], (result) => {
-      if (chrome.runtime.lastError) {
-        console.warn('Error getting dark mode setting:', chrome.runtime.lastError);
-        return;
-      }
-      const isDarkMode = result.darkMode || false;
-      themeToggle.checked = isDarkMode;
-      document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
-    });
-
-    themeToggle.addEventListener('change', () => {
-      const isDarkMode = themeToggle.checked;
-      document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
-      chrome.storage.local.set({ darkMode: isDarkMode }, () => {
-        if (chrome.runtime.lastError) {
-          console.warn('Error saving dark mode setting:', chrome.runtime.lastError);
-        }
-      });
-    });
-  }
-
-  // Summary collapse handling
-  summaryHeader?.addEventListener('click', (e) => {
-    // Don't collapse if clicking on the regenerate button or context popup
-    if (e.target.closest('.regenerate-button') || e.target.closest('.context-bar')) {
-      return;
-    }
-    
-    const isCollapsed = summaryContent.classList.contains('collapsed');
-    const summaryCollapseButton = summaryHeader.querySelector('.collapse-button');
-    if (isCollapsed) {
-      summaryContent.classList.remove('collapsed');
-      summaryCollapseButton?.classList.remove('collapsed');
-    } else {
-      summaryContent.classList.add('collapsed');
-      summaryCollapseButton?.classList.add('collapsed');
-    }
-  });
-
-  // Quiz collapse handling
-  quizHeader?.addEventListener('click', (e) => {
-    // Don't collapse if clicking on the regenerate button or context popup
-    if (e.target.closest('.regenerate-button') || e.target.closest('.context-bar')) {
-      return;
-    }
-    
-    const isCollapsed = quizContent.classList.contains('collapsed');
-    const quizCollapseButton = quizHeader.querySelector('.collapse-button');
-    if (isCollapsed) {
-      quizContent.classList.remove('collapsed');
-      quizCollapseButton?.classList.remove('collapsed');
-    } else {
-      quizContent.classList.add('collapsed');
-      quizCollapseButton?.classList.add('collapsed');
-    }
-  });
-
-  // Chat section is always visible (no collapse handling needed)
-
-  // Function to add a message to the chat
-  // Playful chat message
-  let playfulMessageShown = false;
-
-  function showPlayfulMessage() {
-    if (!chatMessages || playfulMessageShown || chatMessages.children.length > 0) return;
-    
-    const messageElement = document.createElement('div');
-    messageElement.className = 'chat-message assistant playful-message';
-    
-    const text = 'Eureka AI for Chrome';
-    const waveText = text.split('').map((char, index) => {
-      if (char === ' ') {
-        return '<span class="wave-char" style="display: inline-block; width: 0.3em;"> </span>';
-      }
-      return `<span class="wave-char" style="animation-delay: ${index * 0.1}s;">${char}</span>`;
-    }).join('');
-    
-    messageElement.innerHTML = `<span class="wave-text">${waveText}</span>`;
-    chatMessages.appendChild(messageElement);
-    playfulMessageShown = true;
-  }
-
-  function hidePlayfulMessage() {
-    if (!chatMessages) return;
-    const playfulMsg = chatMessages.querySelector('.playful-message');
-    if (playfulMsg) {
-      playfulMsg.remove();
-      playfulMessageShown = false;
-    }
-  }
+  // Theme, collapse, and playful message handling (delegated to UIController)
+  // UIController handles all UI state management
 
   function addChatMessage(message, isUser = false) {
-    // Hide playful message when user sends first message
-    if (isUser) {
-      hidePlayfulMessage();
-    }
-    
-    const messageElement = document.createElement('div');
-    messageElement.className = `chat-message ${isUser ? 'user' : 'assistant'}`;
-    messageElement.textContent = message;
-    chatMessages?.appendChild(messageElement);
-    if (chatMessages) {
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-    
-    // Save chat to cache after adding message
-    saveChatToCache();
-  }
-
-  // Function to save current chat to cache
-  async function saveChatToCache() {
-    if (!currentVideoInfo) return;
-    
-    const videoId = getVideoId(currentVideoInfo.url);
-    if (!videoId || !chatMessages) return;
-    
-    const messages = Array.from(chatMessages.children).map(messageEl => ({
-      text: messageEl.textContent,
-      isUser: messageEl.classList.contains('user')
-    }));
-    
-    await saveGeneratedContent(videoId, 'chat', messages);
-  }
-
-  // Function to load cached chat
-  async function loadCachedChat(videoId) {
-    if (!videoId || !chatMessages) return;
-    
-    const cachedChat = await loadGeneratedContent(videoId, 'chat');
-    if (cachedChat && Array.isArray(cachedChat)) {
-      chatMessages.innerHTML = '';
-      playfulMessageShown = false;
-      cachedChat.forEach(message => {
-        const messageElement = document.createElement('div');
-        messageElement.className = `chat-message ${message.isUser ? 'user' : 'assistant'}`;
-        messageElement.textContent = message.text;
-        chatMessages.appendChild(messageElement);
-      });
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-  }
-
-  // Function to load cached quiz
-  async function loadCachedQuiz(videoId, transcript, summary) {
-    if (!videoId) return;
-    
-    const cachedQuiz = await loadGeneratedContent(videoId, 'quiz');
-    if (cachedQuiz) {
-      console.log('Loading cached quiz');
-      quizContainer?.classList.remove('hidden');
-      
-      if (quizContent) {
-        quizContent.innerHTML = cachedQuiz;
-        quizContent.classList.add('collapsed');
-      }
-      quizHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
-      
-      // Initialize question navigation for cached quiz
-      initializeQuizNavigation();
-      showCompletionBadge(quizContainer);
-    }
-    // Don't auto-generate - user must click "Make Test" button
-  }
-
-  // Generate quiz questions
-  async function generateQuiz(transcript, summary, context = '') {
-    try {
-      console.log('Starting quiz generation...');
-      quizContainer?.classList.remove('hidden');
-      
-      if (quizContent) {
-        quizContent.textContent = 'Generating quiz questions...';
-      }
-      
-      // Show loading indicator
-      showLoadingIndicator(quizContainer);
-      
-      const effectiveContext = context || userContext.quiz || '';
-      
-      // Check if chrome.runtime is available
-      if (typeof chrome === 'undefined' || !chrome.runtime) {
-        throw new Error('Chrome runtime not available');
-      }
-      
-      const response = await chrome.runtime.sendMessage({
-        action: 'generate-quiz',
-        transcript: transcript,
-        summary: summary,
-        context: effectiveContext
-      });
-
-      if (response?.error) {
-        console.error('Quiz generation error:', response.error);
-        if (quizContent) {
-          quizContent.textContent = `Failed to generate quiz: ${response.error}`;
-        }
-        showCompletionBadge(quizContainer);
-        return;
-      }
-
-      if (response?.success && response?.questions) {
-        console.log('Quiz generated successfully');
-        
-        if (quizContent) {
-          quizContent.innerHTML = response.questions;
-          quizContent.classList.add('collapsed');
-        }
-        quizHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
-        
-        // Initialize quiz navigation
-        initializeQuizNavigation();
-        addSubmitButton();
-        
-        // Save quiz to cache
-        const videoId = currentVideoInfo ? getVideoId(currentVideoInfo.url) : null;
-        if (videoId) {
-          await saveGeneratedContent(videoId, 'quiz', response.questions);
-        }
-        
-        // Show completion badge
-        showCompletionBadge(quizContainer);
-        
-        // Show regenerate button, hide make test button
-        const makeTestButton = document.getElementById('make-test-button');
-        const regenerateQuizButton = document.getElementById('regenerate-quiz-button');
-        if (makeTestButton) makeTestButton.style.display = 'none';
-        if (regenerateQuizButton) regenerateQuizButton.style.display = 'block';
-        
-        // Make sure content is visible
-        if (quizContent) {
-          quizContent.style.display = 'block';
-        }
-      } else {
-        throw new Error('Invalid quiz response format');
-      }
-    } catch (error) {
-      console.error('Quiz generation error:', error);
-      if (quizContent) {
-        quizContent.textContent = `Failed to generate quiz: ${error.message}`;
-        quizContent.style.display = 'block';
-      }
-      showCompletionBadge(quizContainer);
-    }
-  }
-
-  // Handle question submission
-  async function handleQuestionSubmit() {
-    const question = questionInput?.value.trim();
-    if (!question) return;
-
-    // Check usage limit and subscription status before processing question
-    const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
-    const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-    const token = stored.sumvid_auth_token;
-    
-    let limitReached = false;
-    let isPremium = false;
-    
-    if (token) {
-      try {
-        const usageResponse = await fetch(`${BACKEND_URL}/api/user/usage`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (usageResponse.ok) {
-          const usage = await usageResponse.json();
-          limitReached = usage.enhancementsUsed >= usage.enhancementsLimit;
-          isPremium = usage.subscriptionStatus === 'premium';
-        }
-      } catch (error) {
-        console.warn('[Eureka AI] Failed to check usage from backend:', error);
-        // Fallback to local check
-        limitReached = await checkUsageLimit();
-      }
+    if (chatManager) {
+      chatManager.addMessage(message, isUser);
     } else {
-      // Not logged in, check local storage
-      limitReached = await checkUsageLimit();
-    }
-    
-    if (limitReached && !isPremium) {
-      // Show styled message with upgrade link
-      const messageText = "You're out of uses for Eureka AI! Wait 24 hours for 10 more uses or ";
-      const upgradeLinkText = "UPGRADE TO PRO";
-      const messageAfterLink = " for unlimited access.";
-      
+      // Fallback if ChatManager not initialized yet
       const messageElement = document.createElement('div');
-      messageElement.className = 'chat-message assistant usage-limit-message';
-      messageElement.innerHTML = `${messageText}<a href="#" class="upgrade-link" id="chat-upgrade-link">${upgradeLinkText}</a>${messageAfterLink}`;
+      messageElement.className = `chat-message ${isUser ? 'user' : 'assistant'}`;
+      messageElement.textContent = message;
       chatMessages?.appendChild(messageElement);
       if (chatMessages) {
         chatMessages.scrollTop = chatMessages.scrollHeight;
       }
-      
-      // Add click handler for upgrade link
-      const upgradeLink = document.getElementById('chat-upgrade-link');
-      if (upgradeLink) {
-        upgradeLink.addEventListener('click', async (e) => {
-          e.preventDefault();
-          if (!token) {
-            alert('Please log in to upgrade to Pro');
-        return;
-      }
-          
-          try {
-            const response = await fetch(`${BACKEND_URL}/api/checkout/create-session`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-              },
-            });
-            
-            if (!response.ok) {
-              throw new Error('Failed to create checkout session');
-            }
-            
-            const data = await response.json();
-            if (data.url) {
-              window.open(data.url, '_blank');
-            } else {
-              alert('Upgrade feature coming soon!');
-            }
-          } catch (error) {
-            console.error('[Eureka AI] Upgrade error:', error);
-            alert(`Failed to initiate upgrade: ${error.message || 'Unknown error'}`);
-          }
-        });
-      }
-      
-      return;
     }
-
-    // Add user's question to chat
-    addChatMessage(question, true);
-    if (questionInput) {
-      questionInput.value = '';
-    }
-
-    // Show loading state
-    if (chatSection) showLoadingIndicator(chatSection);
-
-    try {
-      // Check if chrome.runtime is available
-      // Note: Usage is tracked and incremented on the backend API
-      if (typeof chrome === 'undefined' || !chrome.runtime) {
-        throw new Error('Chrome runtime not available');
-      }
-      
-      // Get combined context (webpage/video + uploaded PDF)
-      const combinedContext = await getCombinedContext();
-      
-      // Get chat history
-      const chatHistoryElements = chatMessages?.querySelectorAll('.chat-message.user, .chat-message.assistant');
-      const chatHistory = [];
-      if (chatHistoryElements) {
-        chatHistoryElements.forEach((el, index) => {
-          if (index < chatHistoryElements.length - 1) { // Exclude current message
-            const isUser = el.classList.contains('user');
-            const text = el.textContent.trim();
-            if (text && !el.classList.contains('playful-message') && !el.classList.contains('usage-limit-message')) {
-              chatHistory.push({
-                role: isUser ? 'user' : 'assistant',
-                content: text
-              });
-            }
-          }
-        });
-      }
-      
-      const response = await chrome.runtime.sendMessage({
-        action: 'sidechat',
-        message: question,
-        chatHistory: chatHistory,
-        context: combinedContext
-      });
-
-      if (response?.error) {
-        addChatMessage(`Error: ${response.error}`, false);
-      } else if (response?.reply) {
-        addChatMessage(response.reply, false);
-      } else {
-        addChatMessage('Sorry, I encountered an error while processing your question.', false);
-      }
-
-      // Update status cards after successful question
-      await updateStatusCards();
-    } catch (error) {
-      console.error('Error submitting question:', error);
-      addChatMessage('Sorry, I encountered an error while processing your question.', false);
-    }
-
-    // Show completion state
-    if (chatSection) showCompletionBadge(chatSection);
   }
-
-  // Event listeners for question input
-  sendQuestionButton?.addEventListener('click', handleQuestionSubmit);
-  questionInput?.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      handleQuestionSubmit();
+  
+  // Chat suggestions functionality (delegated to ChatManager after initialization)
+  async function generateChatSuggestions() {
+    if (chatManager) {
+      await chatManager.generateSuggestions();
     }
-  });
-
-  // Rotating placeholder text for question input
-  const placeholders = [
-    "Ask me to summarize chapters 1-5 in the PDF",
-    "Ask me a unique question",
-    "Ask me to clarify something"
-  ];
-  let placeholderIndex = 0;
-  let placeholderInterval = null;
-
-  function startPlaceholderRotation() {
-    if (placeholderInterval || !questionInput) return;
-    placeholderInterval = setInterval(() => {
-      if (questionInput && !questionInput.value && document.activeElement !== questionInput) {
-        placeholderIndex = (placeholderIndex + 1) % placeholders.length;
-        questionInput.placeholder = placeholders[placeholderIndex];
-      }
-    }, 2000);
   }
+  
+  function hideChatSuggestions() {
+    if (chatManager) {
+      chatManager.hideSuggestions();
+    }
+  }
+  
+  // Generate suggestions on load and when content changes (after manager init)
+  setTimeout(() => {
+    if (chatManager) {
+      chatManager.generateSuggestions();
+    }
+  }, 100);
+  
+  // Screenshot preview functions (delegated to ChatManager)
+  // ChatManager handles all screenshot preview functionality
+  
 
-  function stopPlaceholderRotation() {
-    if (placeholderInterval) {
-      clearInterval(placeholderInterval);
-      placeholderInterval = null;
+  // Function to save current chat to cache (delegated to ChatManager)
+  async function saveChatToCache() {
+    if (chatManager) {
+      await chatManager.saveChatToCache();
     }
   }
 
-  // Initialize placeholder rotation
-  if (questionInput) {
-    questionInput.placeholder = placeholders[0];
-    startPlaceholderRotation();
-    
-    // Stop rotation when input is focused
-    questionInput.addEventListener('focus', () => {
-      stopPlaceholderRotation();
-    });
-    
-    // Resume rotation when input is blurred (if empty)
-    questionInput.addEventListener('blur', () => {
-      if (!questionInput.value) {
-        startPlaceholderRotation();
-      }
-    });
-    
-    // Stop rotation if user types something
-    questionInput.addEventListener('input', () => {
-      if (questionInput.value) {
-        stopPlaceholderRotation();
-      } else if (document.activeElement !== questionInput) {
-        startPlaceholderRotation();
-      }
-    });
+  // Function to load cached chat (delegated to ChatManager)
+  async function loadCachedChat(videoId) {
+    if (chatManager) {
+      await chatManager.loadCachedChat(videoId);
+    }
   }
 
-  // Get Pro button text alternation
-  const getProButton = document.getElementById('get-pro-button');
-  const getProTexts = ['Get Pro', 'Get unlimited usage'];
-  let getProTextIndex = 0;
-  let getProInterval = null;
-
-  function startGetProTextRotation() {
-    if (getProInterval || !getProButton) return;
-    getProInterval = setInterval(() => {
-      if (getProButton) {
-        getProTextIndex = (getProTextIndex + 1) % getProTexts.length;
-        getProButton.textContent = getProTexts[getProTextIndex];
-      }
-    }, 3500); // Change every 3.5 seconds
+  // Function to load cached quiz (delegated to ContentGenerator)
+  async function loadCachedQuiz(videoId, transcript, summary) {
+    if (contentGenerator) {
+      await contentGenerator.loadCachedQuiz(videoId, transcript, summary);
+    }
   }
 
-  if (getProButton) {
-    getProButton.textContent = getProTexts[0];
-    startGetProTextRotation();
+  // Generate quiz questions (delegated to ContentGenerator after initialization)
+  async function generateQuiz(transcript, summary, context = '') {
+    if (contentGenerator) {
+      await contentGenerator.generateQuiz(transcript, summary, context, currentVideoInfo, userContext);
+    }
   }
+
+  // Handle question submission (delegated to ChatManager)
+  async function handleQuestionSubmit() {
+    if (chatManager) {
+      await chatManager.handleSubmit();
+    } else {
+      console.warn('[Eureka AI] ChatManager not initialized yet');
+    }
+  }
+  
+  // Event listeners for question input (ChatManager handles these internally, but keep for fallback)
+  // Note: ChatManager sets up its own event listeners in init()
+
+  // Placeholder rotation (delegated to ChatManager after initialization)
+  // ChatManager handles placeholder rotation internally
+
+  // Get Pro button text alternation (delegated to UsageManager after initialization)
 
   // Info button handler
   const infoButton = document.getElementById('eureka-info-btn');
@@ -780,152 +336,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // PDF Upload functionality
-  const uploadPdfButton = document.getElementById('upload-pdf-button');
-  const pdfUploadInput = document.getElementById('pdf-upload-input');
-  const pdfUploadStatus = document.getElementById('pdf-upload-status');
-
-  // Function to extract PDF text (sends to backend)
-  async function extractPdfText(file) {
-    const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
-    const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-    const token = stored.sumvid_auth_token;
-
-    if (!token) {
-      throw new Error('Please log in to upload PDFs');
-    }
-
-    const formData = new FormData();
-    formData.append('pdf', file);
-
-    const response = await fetch(`${BACKEND_URL}/api/extract-pdf`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-      body: formData
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Failed to extract PDF text' }));
-      throw new Error(errorData.error || 'Failed to extract PDF text');
-    }
-
-    const data = await response.json();
-    return data.text;
-  }
-
-  // Function to handle PDF upload
-  async function handlePdfUpload(file) {
-    if (!file || file.type !== 'application/pdf') {
-      alert('Please select a valid PDF file');
-      return;
-    }
-
-    // Update status
-    if (pdfUploadStatus) {
-      pdfUploadStatus.textContent = `Processing ${file.name}...`;
-      pdfUploadStatus.style.display = 'inline-block';
-      pdfUploadStatus.classList.remove('loaded');
-    }
-
-    try {
-      // Extract text from PDF
-      const pdfText = await extractPdfText(file);
-
-      // Store in chrome.storage.local
-      await chrome.storage.local.set({
-        uploadedPdfContext: {
-          text: pdfText,
-          filename: file.name,
-          timestamp: Date.now()
-        }
-      });
-
-      // Update status
-      if (pdfUploadStatus) {
-        pdfUploadStatus.textContent = `PDF loaded: ${file.name}`;
-        pdfUploadStatus.classList.add('loaded');
-      }
-
-      console.log('[Eureka AI] PDF uploaded and text extracted successfully');
-    } catch (error) {
-      console.error('[Eureka AI] Error uploading PDF:', error);
-      alert(`Failed to upload PDF: ${error.message}`);
-      if (pdfUploadStatus) {
-        pdfUploadStatus.style.display = 'none';
-      }
+  // File Upload functionality (delegated to FileManager after initialization)
+  // FileManager will handle all file upload, screenshot, and read button functionality
+  
+  // Tab switching functionality (delegated to TabManager)
+  function switchTab(tabName) {
+    if (tabManager) {
+      tabManager.switchTab(tabName);
     }
   }
-
-  // Event listeners for PDF upload
-  if (uploadPdfButton && pdfUploadInput) {
-    uploadPdfButton.addEventListener('click', () => {
-      pdfUploadInput.click();
-    });
-
-    pdfUploadInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        handlePdfUpload(file);
-      }
-    });
-  }
-
-  // Function to get combined context (webpage/video + uploaded PDF)
-  // Aggressively truncated to avoid token limits
+  
+  // Function to get combined context (delegated to FileManager after initialization)
   async function getCombinedContext() {
-    const stored = await chrome.storage.local.get(['currentContentInfo', 'uploadedPdfContext']);
-    const contentInfo = stored.currentContentInfo || currentVideoInfo;
-    const uploadedPdf = stored.uploadedPdfContext;
-
-    let context = '';
-    const maxPdfLength = 6000; // ~1500 tokens
-    const maxContentLength = 2000; // ~500 tokens
-    const totalMaxLength = 8000; // Total context should not exceed this
-
-    // Add uploaded PDF context FIRST (most important for user queries)
-    if (uploadedPdf) {
-      // Handle both object format and string format for backward compatibility
-      const pdfText = typeof uploadedPdf === 'string' ? uploadedPdf : (uploadedPdf.text || '');
-      const pdfFilename = uploadedPdf.filename || 'uploaded PDF';
-      
-      if (pdfText && pdfText.trim()) {
-        // Truncate PDF text aggressively
-        const truncatedPdf = pdfText.substring(0, maxPdfLength);
-        context += `=== UPLOADED PDF DOCUMENT: ${pdfFilename} ===\n\n`;
-        context += `The user has uploaded a PDF file named "${pdfFilename}". `;
-        context += `Here is the COMPLETE TEXT CONTENT extracted from this PDF. `;
-        context += `You MUST use this content to answer questions about the PDF:\n\n`;
-        context += truncatedPdf;
-        if (pdfText.length > maxPdfLength) {
-          context += `\n\n[Note: PDF content truncated for length. The document contains ${Math.ceil(pdfText.length / 1000)}k characters total.]`;
-        }
-        context += `\n\n=== END OF UPLOADED PDF ===\n\n`;
-      }
+    if (fileManager) {
+      return await fileManager.getCombinedContext();
     }
-
-    // Add webpage/video/PDF context (secondary, truncated to avoid token limits)
-    // Only add if we haven't exceeded total length
-    if (contentInfo && context.length < totalMaxLength) {
-      const remainingLength = totalMaxLength - context.length;
-      const contentType = contentInfo.type || 'webpage';
-      if (contentType === 'video' && contentInfo.transcript) {
-        const truncatedTranscript = contentInfo.transcript.substring(0, Math.min(maxContentLength, remainingLength));
-        context += `=== CURRENT VIDEO CONTENT ===\n\nVideo transcript:\n${truncatedTranscript}\n\n`;
-      } else if (contentInfo.text) {
-        const truncatedText = contentInfo.text.substring(0, Math.min(maxContentLength, remainingLength));
-        context += `=== CURRENT ${contentType.toUpperCase()} CONTENT ===\n\n${truncatedText}\n\n`;
-      }
-    }
-
-    // Final safety check - truncate if still too long
-    if (context.length > totalMaxLength) {
-      context = context.substring(0, totalMaxLength);
-      context += '\n\n[Note: Context truncated for length.]';
-    }
-
-    return context.trim();
+    // Fallback
+    return '';
   }
 
   // Info dialog GET PRO button handler
@@ -996,665 +423,242 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Function to format duration in MM:SS or HH:MM:SS
+  // Helper functions for info center (delegated to ContentGenerator after initialization)
   function formatDuration(seconds) {
+    if (contentGenerator) {
+      return contentGenerator.formatDuration(seconds);
+    }
+    // Fallback
     if (!seconds) return '--:--';
-    
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const remainingSeconds = Math.floor(seconds % 60);
-    
     if (hours > 0) {
       return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 
-  // Function to calculate estimated reading time
   function calculateReadingTime(text, returnRawMinutes = false) {
+    if (contentGenerator) {
+      return contentGenerator.calculateReadingTime(text, returnRawMinutes);
+    }
+    // Fallback
     if (!text) return returnRawMinutes ? 0 : '-- min';
-    
-    // Create a temporary element to parse the HTML and get text content
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = text;
     const cleanText = tempDiv.textContent || tempDiv.innerText || "";
-  
-    // Average reading speed (words per minute)
     const wordsPerMinute = 200;
     const wordCount = cleanText.trim().split(/\s+/).filter(Boolean).length;
     if (wordCount === 0) return returnRawMinutes ? 0 : '-- min';
-  
     const minutes = Math.ceil(wordCount / wordsPerMinute);
-    
     return returnRawMinutes ? minutes : `${minutes} min`;
   }
 
-  // Function to update the info center
   function updateInfoCenter(videoDuration, summaryText) {
-    const videoDurationElement = document.getElementById('video-duration');
-    const readingTimeElement = document.getElementById('estimated-reading-time');
-    const learningMultiplierElement = document.getElementById('learning-multiplier');
-    const multiplierMainText = document.getElementById('multiplier-main-text');
-    const multiplierSubtitle = document.getElementById('multiplier-subtitle');
-
-    if (videoDurationElement) {
-      videoDurationElement.textContent = formatDuration(videoDuration);
-    }
-    
-    const readingMinutes = calculateReadingTime(summaryText, true);
-
-    if (readingTimeElement) {
-      readingTimeElement.textContent = readingMinutes > 0 ? `${readingMinutes} min` : '-- min';
-    }
-
-    if (learningMultiplierElement && videoDuration > 0 && readingMinutes > 0) {
-      const videoMinutes = videoDuration / 60;
-      const multiplier = Math.round(videoMinutes / readingMinutes);
-
-      if (multiplier > 1) {
-        if (multiplierMainText && multiplierSubtitle) {
-            multiplierMainText.innerHTML = `You are a <strong>${multiplier}X</strong> learner!`;
-            multiplierSubtitle.textContent = "Visit the Test Your Knowledge section to truly retain this knowledge!";
-        }
-        learningMultiplierElement.classList.remove('hidden');
-      } else {
-        learningMultiplierElement.classList.add('hidden');
-      }
-    } else if (learningMultiplierElement) {
-      learningMultiplierElement.classList.add('hidden');
+    if (contentGenerator) {
+      contentGenerator.updateInfoCenter(videoDuration, summaryText);
     }
   }
 
-  // Modify summarizeText to update reading time when summary is generated
+  // Summary generation (delegated to ContentGenerator)
   async function summarizeText(text, forceRegenerate = false, context = '') {
-    summaryContainer?.classList.remove('hidden');
-    quizContainer?.classList.remove('hidden');
-
-    // Premium feature check for long videos
-    if (currentVideoInfo?.duration > 3600) {
-      console.log('Video is longer than 1 hour. Showing premium message.');
-      const summaryTextElement = document.querySelector('#summary-content .summary-text');
-      
-      if (summaryTextElement) {
-        summaryTextElement.innerHTML = `
-          <div class="premium-popup">
-            <h4>Premium Feature</h4>
-            <p>Summarizing videos 1 hour or longer is a premium feature.</p>
-            <button class="upgrade-button">Upgrade to the PROfessor Plan for $5.99 to access!</button>
-          </div>
-        `;
-        document.querySelector('.summary-info-center')?.classList.add('hidden');
-        showCompletionBadge(summaryContainer);
-      }
-
-      if (quizContent) {
-        quizContent.innerHTML = `
-          <div class="premium-popup">
-            <h4>Premium Feature</h4>
-            <p>Quizzes for videos 1 hour or longer is a premium feature.</p>
-            <button class="upgrade-button">Upgrade to the PROfessor Plan for $5.99 to access!</button>
-          </div>
-        `;
-        showCompletionBadge(quizContainer);
-      }
-
-      if (chatMessages) {
-        chatMessages.innerHTML = `
-          <div class="premium-popup" style="padding: 10px; margin-top: 0;">
-            <p style="margin-bottom: 0;">AI Chat is also a premium feature for long videos.</p>
-          </div>
-        `;
-        questionInput.disabled = true;
-        sendQuestionButton.disabled = true;
-        questionInput.placeholder = 'Upgrade to use AI Chat for this video.';
-      }
-
-      return;
-    }
-    
-    // Ensure chat is enabled for non-premium videos
-    if (chatMessages) {
-      questionInput.disabled = false;
-      sendQuestionButton.disabled = false;
-      questionInput.placeholder = 'Ask a question about the video...';
-    }
-
-    try {
-      console.log('Starting summarization...');
-      
-      const videoId = currentVideoInfo ? getVideoId(currentVideoInfo.url) : null;
-      const summaryTextElement = document.querySelector('#summary-content .summary-text');
-      const summaryInfoCenter = document.querySelector('.summary-info-center');
-      
-      // Check for cached summary if not forcing regeneration
-      if (!forceRegenerate && videoId) {
-        const cachedSummary = await loadGeneratedContent(videoId, 'summary');
-        if (cachedSummary) {
-          console.log('Loading cached summary');
-          if (summaryTextElement) {
-            summaryTextElement.innerHTML = cachedSummary;
-            // Show and update info center for cached summary
-            summaryInfoCenter?.classList.remove('hidden');
-            updateInfoCenter(currentVideoInfo?.duration, cachedSummary);
-          }
-          showCompletionBadge(summaryContainer);
-          
-          // Keep summary collapsed when loading cached content
-          summaryContent?.classList.add('collapsed');
-          summaryHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
-          
-          // Load cached chat
-          await loadCachedChat(videoId);
-          
-          // Load cached quiz
-          await loadCachedQuiz(videoId, text, cachedSummary);
-          return;
-        }
-      }
-      
-      // Ensure summary container is visible
-      if (summaryContainer) {
-        summaryContainer.classList.remove('hidden');
-      }
-      if (summaryContent) {
-        summaryContent.style.display = 'block';
-      }
-      
-      if (summaryTextElement) {
-        summaryTextElement.textContent = 'Generating summary...';
-        summaryInfoCenter?.classList.add('hidden');
-      }
-      
-      // Show loading indicator
-      showLoadingIndicator(summaryContainer);
-      
-      const effectiveContext = context || userContext.summary || '';
-      
-      let response;
-      try {
-        // Check if chrome.runtime is available
-        if (typeof chrome === 'undefined' || !chrome.runtime) {
-          throw new Error('Chrome runtime not available');
-        }
-        
-        response = await chrome.runtime.sendMessage({ 
-          action: 'summarize', 
-          transcript: text,
-          context: effectiveContext
-        });
-
-        // Cache the transcript in currentVideoInfo
-        if (currentVideoInfo && !currentVideoInfo.transcript) {
-          currentVideoInfo.transcript = text;
-        }
-
-      } catch (error) {
-        console.error('Error sending message to background:', error);
-        if (summaryTextElement) {
-          summaryTextElement.textContent = `Failed to generate summary: ${error.message}`;
-          summaryInfoCenter?.classList.add('hidden');
-        }
-        return;
-      }
-
-      console.log('Received summary response:', response);
-      if (response?.error) {
-        console.error('Summary error:', response.error);
-        if (summaryTextElement) {
-          summaryTextElement.textContent = `Failed to generate summary: ${response.error}`;
-          summaryInfoCenter?.classList.add('hidden');
-        }
-      } else {
-        // Use innerHTML to properly render HTML tags
-        if (summaryTextElement) {
-          summaryTextElement.innerHTML = response.summary;
-          // Show and update info center for new summary
-          summaryInfoCenter?.classList.remove('hidden');
-          updateInfoCenter(currentVideoInfo?.duration, response.summary);
-        }
-        
-        // Save summary to cache
-        if (videoId) {
-          await saveGeneratedContent(videoId, 'summary', response.summary);
-        }
-        
-        // Show completion badge
-        showCompletionBadge(summaryContainer);
-        
-        // Show regenerate button, hide summarize button
-        const summarizeButton = document.getElementById('summarize-button');
-        const regenerateSummaryButton = document.getElementById('regenerate-summary-button');
-        if (summarizeButton) summarizeButton.style.display = 'none';
-        if (regenerateSummaryButton) regenerateSummaryButton.style.display = 'block';
-        
-        // Make sure content is visible
-        if (summaryContent) {
-          summaryContent.style.display = 'block';
-        }
-        
-        // Keep summary collapsed when generating new content
-        summaryContent?.classList.add('collapsed');
-        summaryHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
-        
-        // Show and initialize questions section
-        if (chatMessages) {
-          chatMessages.innerHTML = '';
-          playfulMessageShown = false;
-          showPlayfulMessage();
-        }
-        
-        // Don't auto-generate quiz - user must click "Make Test" button
-        quizContainer?.classList.remove('hidden');
-      }
-    } catch (error) {
-      console.error('Summary error:', error);
-      if (summaryTextElement) {
-        summaryTextElement.textContent = `Failed to generate summary: ${error.message}`;
-        summaryInfoCenter?.classList.add('hidden');
-      }
+    if (contentGenerator) {
+      await contentGenerator.generateSummary(text, forceRegenerate, context, currentVideoInfo, userContext);
+    } else {
+      console.warn('[Eureka AI] ContentGenerator not initialized, cannot generate summary');
     }
   }
 
+  // Quiz functions (delegated to ContentGenerator)
   function checkQuizAnswers() {
-    const contentWrapper = quizContent?.querySelector('.quiz-content-wrapper');
-    const questions = contentWrapper?.querySelectorAll('.question') || quizContent?.querySelectorAll('.question');
-    if (!questions) return;
-
-    let correctAnswers = 0;
-    let totalQuestions = questions.length;
-
-    // Mark answers and count correct
-    questions.forEach((question) => {
-      const selectedAnswer = question.querySelector('input[type="radio"]:checked');
-      const correctAnswer = question.querySelector('.correct-answer')?.textContent;
-      const allOptions = question.querySelectorAll('.quiz-option-button, label[for*="option"]');
-      
-      // Remove any existing marking
-      allOptions.forEach(option => {
-        option.classList.remove('quiz-answer-correct', 'quiz-answer-incorrect');
-        option.style.border = '';
-      });
-      
-      // Mark correct answer with green outline
-      if (correctAnswer) {
-        allOptions.forEach(option => {
-          const optionText = option.textContent.trim() || option.querySelector('span')?.textContent.trim();
-          if (optionText === correctAnswer) {
-            option.classList.add('quiz-answer-correct');
-            option.style.border = '2px solid #10b981';
-          }
-        });
-      }
-      
-      // Mark selected answer
-      if (selectedAnswer) {
-        const selectedLabel = selectedAnswer.closest('label') || selectedAnswer.parentElement;
-        if (selectedLabel) {
-          if (selectedAnswer.value === correctAnswer) {
-        correctAnswers++;
-            selectedLabel.classList.add('quiz-answer-correct');
-            selectedLabel.style.border = '2px solid #10b981';
-          } else {
-            selectedLabel.classList.add('quiz-answer-incorrect');
-            selectedLabel.style.border = '2px solid #ef4444';
-          }
-        }
-      }
-    });
-
-    // Show results dialog
-    showQuizResultsDialog(correctAnswers, totalQuestions);
+    if (contentGenerator) {
+      contentGenerator.checkQuizAnswers();
+    }
   }
   
   function showQuizResultsDialog(correctAnswers, totalQuestions) {
-    const dialog = document.getElementById('quiz-results-dialog');
-    const messageEl = document.getElementById('quiz-results-message');
-    if (!dialog || !messageEl) return;
-    
-    const percentage = Math.round((correctAnswers / totalQuestions) * 100);
-    let message = '';
-    
-    if (percentage === 100) {
-      message = 'YOU WON!';
-    } else if (correctAnswers === 2) {
-      message = 'YOU DID OK';
-    } else if (correctAnswers === 1) {
-      message = 'AT LEAST YOU KNEW ONE THING!';
-    } else {
-      message = 'YOU COULDN\'T BE MORE WRONG!';
+    if (contentGenerator) {
+      contentGenerator.showQuizResultsDialog(correctAnswers, totalQuestions);
     }
-    
-    messageEl.textContent = message;
-    messageEl.className = 'quiz-results-message quiz-results-message--' + (percentage === 100 ? 'win' : correctAnswers === 2 ? 'ok' : correctAnswers === 1 ? 'partial' : 'fail');
-    
-    dialog.showModal();
-    
-    // Close handler
-    dialog.addEventListener('close', () => {
-      // Show tooltip on regenerate button after quiz completion
-      setTimeout(() => {
-        showRegenerateTooltip();
-      }, 500);
-    }, { once: true });
   }
 
-  // Add event listener to submit button in navigation
   function addSubmitButton() {
-    if (!quizContent) return;
-
-    const submitButton = quizContent.querySelector('#submitQuiz');
-    if (submitButton) {
-      submitButton.addEventListener('click', checkQuizAnswers);
+    if (contentGenerator) {
+      contentGenerator.addSubmitButton();
     }
   }
 
-  // Function to initialize quiz navigation (used for both new and cached quizzes)
   function initializeQuizNavigation() {
-    currentQuestionIndex = 0;
-    const questions = quizContent?.querySelectorAll('.question');
-    if (questions) {
-      totalQuestions = questions.length;
-      
-      // Show first question
-      questions[0].classList.add('active');
+    if (contentGenerator) {
+      contentGenerator.initializeQuizNavigation();
     }
-    
-    // Add large purple navigation buttons if they don't exist
-    let navWrapper = quizContent?.querySelector('.quiz-navigation-wrapper');
-    if (!navWrapper && quizContent) {
-      // Wrap quiz content with navigation buttons
-      const originalHTML = quizContent.innerHTML;
-      navWrapper = document.createElement('div');
-      navWrapper.className = 'quiz-navigation-wrapper';
-      
-      // Create left navigation button
-      const prevButton = document.createElement('button');
-      prevButton.id = 'quiz-prev-button';
-      prevButton.className = 'quiz-nav-button quiz-nav-button--prev';
-      prevButton.innerHTML = '←';
-      prevButton.setAttribute('aria-label', 'Previous question');
-      
-      // Create right navigation button
-      const nextButton = document.createElement('button');
-      nextButton.id = 'quiz-next-button';
-      nextButton.className = 'quiz-nav-button quiz-nav-button--next';
-      nextButton.innerHTML = '→';
-      nextButton.setAttribute('aria-label', 'Next question');
-      
-      // Create content wrapper
-      const contentWrapper = document.createElement('div');
-      contentWrapper.className = 'quiz-content-wrapper';
-      contentWrapper.innerHTML = originalHTML;
-      
-      navWrapper.appendChild(prevButton);
-      navWrapper.appendChild(contentWrapper);
-      navWrapper.appendChild(nextButton);
-      
-      quizContent.innerHTML = '';
-      quizContent.appendChild(navWrapper);
-      
-      // Re-query questions after restructuring
-      const newQuestions = contentWrapper.querySelectorAll('.question');
-      if (newQuestions.length > 0) {
-        newQuestions[0].classList.add('active');
-      }
-    }
-    
-    updateQuestionCounter();
-    
-    // Add navigation event listeners
-    const prevButton = quizContent?.querySelector('#quiz-prev-button') || quizContent?.querySelector('#prevQuestion');
-    const nextButton = quizContent?.querySelector('#quiz-next-button') || quizContent?.querySelector('#nextQuestion');
-    
-    if (prevButton) {
-      prevButton.addEventListener('click', () => navigateQuestions(-1));
-    }
-    if (nextButton) {
-      nextButton.addEventListener('click', () => navigateQuestions(1));
-    }
-    
-    // Update button states
-    updateNavigationButtons();
   }
 
   function navigateQuestions(direction) {
-    const contentWrapper = quizContent?.querySelector('.quiz-content-wrapper');
-    const questions = contentWrapper?.querySelectorAll('.question') || quizContent?.querySelectorAll('.question');
-    if (!questions) return;
-
-    questions[currentQuestionIndex].classList.remove('active');
-    
-    currentQuestionIndex = Math.max(0, Math.min(totalQuestions - 1, currentQuestionIndex + direction));
-    
-    questions[currentQuestionIndex].classList.add('active');
-    updateQuestionCounter();
-    updateNavigationButtons();
+    if (contentGenerator) {
+      contentGenerator.navigateQuestions(direction);
+    }
   }
 
   function updateQuestionCounter() {
-    const counter = quizContent?.querySelector('#questionCounter');
-    if (counter) {
-      counter.textContent = `Question ${currentQuestionIndex + 1}/${totalQuestions}`;
+    if (contentGenerator) {
+      contentGenerator.updateQuestionCounter();
     }
   }
 
   function updateNavigationButtons() {
-    const prevButton = quizContent?.querySelector('#quiz-prev-button') || quizContent?.querySelector('#prevQuestion');
-    const nextButton = quizContent?.querySelector('#quiz-next-button') || quizContent?.querySelector('#nextQuestion');
+    if (contentGenerator) {
+      contentGenerator.updateNavigationButtons();
+    }
+  }
+  
+  // Content display and initialization (delegated to ContentDisplayManager)
+  // ContentDisplayManager handles all content info display and initialization
+  
+  // Info dialogs and auto-login (delegated to InfoDialogsManager)
+  // InfoDialogsManager handles all info dialogs and auto-login functionality
+  
+  // Initialize managers
+  let chatManager, contentGenerator, tabManager, usageManager, fileManager, flashcardUIController, notesUIController, contentDisplayManager;
+  
+  function initializeManagers() {
+    // Initialize ChatManager
+    if (window.ChatManager) {
+      chatManager = new window.ChatManager(
+        chatMessages,
+        questionInput,
+        sendQuestionButton,
+        chatSuggestions,
+        chatSection
+      );
+      window.chatManager = chatManager; // Make globally accessible
+    }
     
-    if (prevButton) {
-      prevButton.disabled = currentQuestionIndex === 0;
-      prevButton.style.opacity = currentQuestionIndex === 0 ? '0.5' : '1';
-    }
-    if (nextButton) {
-      nextButton.disabled = currentQuestionIndex === totalQuestions - 1;
-      nextButton.style.opacity = currentQuestionIndex === totalQuestions - 1 ? '0.5' : '1';
-    }
-  }
-  
-  // Function to request fresh content info (works for any content type)
-  async function requestContentInfo() {
-    try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const currentTab = tabs?.[0];
-      
-      if (currentTab?.id) {
-        const response = await sendMessageWithTimeout({ type: 'REQUEST_CONTENT_INFO' });
-        if (response?.error) {
-          console.warn('Error requesting content info:', response.error);
-          // Don't show error state - just wait for content script to send info
-        }
-      }
-    } catch (error) {
-      console.warn('Error requesting content info:', error);
-      // Don't show error state - allow extension to work anyway
-    }
-  }
-
-  // Show loading state initially
-  showState(loadingState);
-  
-  // Initialize extension for any content type (video, webpage, PDF)
-  async function initializeExtension() {
-    try {
-      // Check for cached content info (works for any content type)
-      const stored = await chrome.storage.local.get(['currentContentInfo', 'currentVideoInfo']);
-      const contentInfo = stored.currentContentInfo || stored.currentVideoInfo;
-      
-      if (contentInfo) {
-        // We have content info, display it
-        await displayVideoInfo(contentInfo);
-        return;
-      }
-      
-      // No cached content yet, request it from content script
-      // The content script will send content info when ready
-      showState(loadingState);
-      const loadingText = loadingState.querySelector('p');
-      if (loadingText) loadingText.textContent = 'Extracting content...';
-      requestContentInfo();
-    } catch (error) {
-      console.warn('Error initializing extension:', error);
-      // Don't show error state - show interface anyway and let content script populate it
-      showState(videoInfoState);
-    }
-  }
-  
-  // Section info button handlers
-  const sectionInfoButtons = {
-    'summary-info-button': 'summary-info-dialog',
-    'flashcard-info-button': 'flashcard-info-dialog',
-    'quiz-info-button': 'quiz-info-dialog',
-    'notes-info-button': 'notes-info-dialog'
-  };
-
-  Object.entries(sectionInfoButtons).forEach(([buttonId, dialogId]) => {
-    const button = document.getElementById(buttonId);
-    const dialog = document.getElementById(dialogId);
-    const upgradeButton = document.getElementById(buttonId.replace('-button', '-upgrade'));
-
-    if (button && dialog) {
-      button.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dialog.showModal();
+    // Initialize ContentGenerator
+    if (window.ContentGenerator) {
+      contentGenerator = new window.ContentGenerator({
+        summaryContainer: summaryContainer,
+        summaryContent: summaryContent,
+        summaryHeader: summaryHeader,
+        quizContainer: quizContainer,
+        quizContent: quizContent,
+        quizHeader: quizHeader
       });
+      window.contentGenerator = contentGenerator; // Make globally accessible
     }
-
-    if (upgradeButton) {
-      upgradeButton.addEventListener('click', async () => {
-        dialog.close();
-        const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
-        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-        const token = stored.sumvid_auth_token;
-        
-        if (!token) {
-          alert('Please log in to upgrade to Pro');
-          return;
-        }
-
-        try {
-          const response = await fetch(`${BACKEND_URL}/api/checkout/create-session`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-          });
-          
-          if (!response.ok) {
-            throw new Error('Failed to create checkout session');
+    
+    // Initialize TabManager
+    if (window.TabManager) {
+      tabManager = new window.TabManager(tabButtons, tabContents);
+      window.tabManager = tabManager; // Make globally accessible
+      
+      // Listen for chat suggestion actions to trigger tab switches
+      window.addEventListener('chat-suggestion-action', (e) => {
+        const { action } = e.detail;
+        if (action === 'summarize') {
+          tabManager.switchTab('summarize');
+          const summarizeButton = document.getElementById('summarize-button');
+          if (summarizeButton && !summarizeButton.disabled) {
+            summarizeButton.click();
           }
-          
-          const data = await response.json();
-          if (data.url) {
-            window.open(data.url, '_blank');
-      } else {
-            alert('Upgrade feature coming soon!');
-      }
-    } catch (error) {
-          console.error('[Eureka AI] Upgrade error:', error);
-          alert(`Failed to initiate upgrade: ${error.message}`);
+        } else if (action === 'flashcards') {
+          tabManager.switchTab('flashcards');
+          const flashcardButton = document.getElementById('generate-flashcard-button');
+          if (flashcardButton && !flashcardButton.disabled) {
+            flashcardButton.click();
+          }
+        } else if (action === 'quiz') {
+          tabManager.switchTab('quiz');
+          const quizButton = document.getElementById('make-test-button');
+          if (quizButton && !quizButton.disabled) {
+            quizButton.click();
+          }
         }
       });
     }
-  });
-
-  // Auto-login dialog for non-logged-in users
-  let autoLoginInterval = null;
-  let autoLoginTimeout = null;
-  
-  async function checkAndShowLoginDialog() {
-    const accountDialog = document.getElementById('account-dialog');
-    const createAccountDialog = document.getElementById('create-account-dialog');
-    if (!accountDialog) return;
     
-    // Don't interrupt if create account dialog is open
-    if (createAccountDialog && createAccountDialog.open) {
-      return;
+    // Initialize UsageManager
+    if (window.UsageManager) {
+      usageManager = new window.UsageManager({
+        getProButton: document.getElementById('get-pro-button')
+      });
+      window.usageManager = usageManager; // Make globally accessible
     }
     
-    // Check if user is logged in
-    const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-    const isLoggedIn = !!stored.sumvid_auth_token;
-    
-    // If not logged in and dialog is not open, show it
-    if (!isLoggedIn && !accountDialog.open) {
-      accountDialog.showModal();
-    } else if (isLoggedIn) {
-      // User is logged in, stop auto-opening
-      if (autoLoginInterval) {
-        clearInterval(autoLoginInterval);
-        autoLoginInterval = null;
-      }
-      if (autoLoginTimeout) {
-        clearTimeout(autoLoginTimeout);
-        autoLoginTimeout = null;
-      }
+    // Initialize FileManager
+    if (window.FileManager) {
+      fileManager = new window.FileManager({
+        uploadButton: document.getElementById('upload-file-button'),
+        fileInput: document.getElementById('file-upload-input'),
+        fileUploadStatus: document.getElementById('file-upload-status'),
+        screenshotButton: document.getElementById('screenshot-button'),
+        readButton: document.getElementById('read-button')
+      });
+      window.fileManager = fileManager; // Make globally accessible
     }
-  }
-  
-  function startAutoLoginDialog() {
-    // Check immediately
-    checkAndShowLoginDialog();
     
-    // Then check every 10 seconds
-    autoLoginInterval = setInterval(() => {
-      checkAndShowLoginDialog();
-    }, 10000);
+    // Initialize ContentDisplayManager
+    if (window.ContentDisplayManager) {
+      contentDisplayManager = new window.ContentDisplayManager({
+        loadingState: loadingState,
+        noVideoState: noVideoState,
+        videoInfoState: videoInfoState,
+        videoTitle: videoTitle,
+        channelName: channelName
+      });
+      window.contentDisplayManager = contentDisplayManager; // Make globally accessible
+    }
     
-    // Listen for dialog close events
-    const accountDialog = document.getElementById('account-dialog');
-    if (accountDialog) {
-      accountDialog.addEventListener('close', () => {
-        // If user closed dialog and still not logged in, reopen after 10 seconds
-        chrome.storage.local.get(['sumvid_auth_token'], (result) => {
-          if (!result.sumvid_auth_token) {
-            if (autoLoginTimeout) {
-              clearTimeout(autoLoginTimeout);
-            }
-            autoLoginTimeout = setTimeout(() => {
-              checkAndShowLoginDialog();
-            }, 10000);
-          }
-        });
+    // Initialize FlashcardUIController
+    if (window.FlashcardUIController) {
+      flashcardUIController = new window.FlashcardUIController({
+        flashcardContainer: flashcardContainer,
+        flashcardContent: flashcardContent,
+        flashcardList: flashcardList,
+        flashcardEmpty: flashcardEmpty
+      });
+      window.flashcardUIController = flashcardUIController; // Make globally accessible
+    }
+    
+    // Initialize NotesUIController
+    if (window.NotesUIController) {
+      const notesList = document.getElementById('notes-list');
+      const noteEmpty = document.getElementById('note-empty');
+      notesUIController = new window.NotesUIController({
+        notesContainer: document.getElementById('notes-container'),
+        notesContent: document.getElementById('notes-content'),
+        notesList: notesList,
+        noteEmpty: noteEmpty
+      });
+      window.notesUIController = notesUIController; // Make globally accessible
+      console.log('[sidebar.js] NotesUIController initialized:', {
+        container: !!notesUIController.notesContainer,
+        content: !!notesUIController.notesContent,
+        list: !!notesUIController.notesList,
+        empty: !!notesUIController.noteEmpty
       });
     }
-    
-    // Listen for login success
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-      if (namespace === 'local' && changes.sumvid_auth_token) {
-        if (changes.sumvid_auth_token.newValue) {
-          // User logged in, stop auto-opening
-          if (autoLoginInterval) {
-            clearInterval(autoLoginInterval);
-            autoLoginInterval = null;
-          }
-          if (autoLoginTimeout) {
-            clearTimeout(autoLoginTimeout);
-            autoLoginTimeout = null;
-          }
-        }
-      }
-    });
   }
-  
-  // Start auto-login dialog after a short delay to let modules load
-  setTimeout(() => {
-    startAutoLoginDialog();
-  }, 1000);
-  
-  // Initialize extension
-  initializeExtension();
   
   // Initialize modules (wait a bit to ensure scripts are loaded)
   let moduleRetryCount = 0;
   const MAX_MODULE_RETRIES = 10;
   
   function initializeModules() {
+    // Wait for DOM to be fully ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initializeModules);
+      return;
+    }
+    
     if (window.SettingsPanel) {
-      window.SettingsPanel.initializeSettings();
-      window.SettingsPanel.registerSettingsHandlers();
+      try {
+        window.SettingsPanel.initializeSettings();
+        window.SettingsPanel.registerSettingsHandlers();
+      } catch (error) {
+        console.error('[Eureka AI] Error initializing SettingsPanel:', error);
+      }
     } else {
       console.warn('[Eureka AI] SettingsPanel module not loaded');
     }
@@ -1686,527 +690,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       console.warn('[Eureka AI] SumVidFlashcardMaker module not loaded');
     }
+    
+    // Initialize managers after other modules are loaded
+    initializeManagers();
+    
+    // Initialize extension after managers are initialized
+    initializeExtension();
   }
   
-  // Flashcard UI initialization
+  // Flashcard UI (delegated to FlashcardUIController)
   async function initializeFlashcardUI() {
-    const generateFlashcardButton = document.getElementById('generate-flashcard-button');
-    
-    if (!flashcardContainer || !generateFlashcardButton) {
-      console.warn('[Eureka AI] Flashcard UI elements not found');
-      return;
+    if (flashcardUIController) {
+      await flashcardUIController.initializeFlashcardUI();
     }
-    
-    // Generate flashcard button handler
-    generateFlashcardButton.addEventListener('click', async () => {
-      await handleGenerateFlashcards();
-    });
-    
-    // Initial render
-    await renderFlashcards();
-  }
-  
-  async function handleGenerateFlashcards() {
-    const generateButton = document.getElementById('generate-flashcard-button');
-    if (!generateButton || !window.SumVidFlashcardMaker) return;
-    
-    // Get current content info
-    const stored = await chrome.storage.local.get(['currentContentInfo', 'currentVideoInfo']);
-    const contentInfo = stored.currentContentInfo || stored.currentVideoInfo;
-    
-    if (!contentInfo) {
-      alert('No content available to generate flashcards from.');
-      return;
-    }
-    
-    const contentType = contentInfo.type || 'video';
-    const contentText = contentType === 'video' 
-      ? (contentInfo.transcript || '')
-      : (contentInfo.text || '');
-    
-    if (!contentText || contentText.length < 50) {
-      alert('Content is too short to generate flashcards. Please ensure you have a summary or transcript available.');
-      return;
-    }
-    
-    // Check usage limit
-    const limitReached = await checkUsageLimit();
-    if (limitReached) {
-      alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-      return;
-    }
-    
-    generateButton.disabled = true;
-    generateButton.textContent = 'Generating...';
-    
-    if (flashcardContent) {
-      flashcardContent.classList.remove('collapsed');
-      flashcardContent.style.display = 'block';
-      flashcardList.innerHTML = '<p style="text-align: center; padding: 20px; color: var(--text-secondary);">Generating flashcards...</p>';
-    }
-    flashcardContainer?.classList.remove('hidden');
-    
-    try {
-      // Note: Usage is tracked and incremented on the backend API
-      // Generate flashcards
-      const message = {
-        action: 'generate-flashcards',
-        contentType: contentType,
-        title: contentInfo.title || (contentType === 'video' ? 'unknown video' : contentType === 'pdf' ? 'unknown document' : 'unknown page')
-      };
-      
-      // Only include the relevant content field (transcript for video, text for others)
-      if (contentType === 'video') {
-        message.transcript = contentText;
-      } else {
-        message.text = contentText;
-      }
-      
-      const response = await chrome.runtime.sendMessage(message);
-      
-      if (response?.error) {
-        alert(response.error);
-        if (flashcardList) {
-          flashcardList.innerHTML = `<p style="text-align: center; padding: 20px; color: #e74c3c;">Failed to generate flashcards: ${response.error}</p>`;
-        }
-      } else if (response?.success && response?.flashcards) {
-        // Create flashcard set
-        const setTitle = `${contentInfo.title || 'Untitled'} - Flashcards`;
-        await window.SumVidFlashcardMaker.createFlashcardSet(setTitle, response.flashcards);
-        await renderFlashcards();
-        // Ensure content is visible
-        if (flashcardContent) {
-          flashcardContent.classList.remove('collapsed');
-          flashcardContent.style.display = 'block';
-        }
-      }
-      
-      await updateStatusCards();
-    } catch (error) {
-      console.error('[Eureka AI] Flashcard generation error:', error);
-      alert('Failed to generate flashcards. Please try again.');
-      if (flashcardList) {
-        flashcardList.innerHTML = '<p style="text-align: center; padding: 20px; color: #e74c3c;">Failed to generate flashcards.</p>';
-      }
-    } finally {
-      generateButton.disabled = false;
-      generateButton.textContent = 'Generate Flashcards';
-    }
-  }
-  
-  async function renderFlashcards() {
-    if (!window.SumVidFlashcardMaker || !flashcardList || !flashcardEmpty) return;
-    
-    await window.SumVidFlashcardMaker.loadFlashcards();
-    const sets = window.SumVidFlashcardMaker.getAllFlashcards();
-    
-    // Get current content to filter relevant flashcards
-    const stored = await chrome.storage.local.get(['currentContentInfo', 'currentVideoInfo']);
-    const contentInfo = stored.currentContentInfo || stored.currentVideoInfo;
-    const currentTitle = contentInfo?.title || '';
-    
-    // Filter flashcards for current content (simple title matching)
-    const relevantSets = currentTitle 
-      ? sets.filter(set => set.title.includes(currentTitle))
-      : sets.slice(-1); // Show most recent if no content
-    
-    if (relevantSets.length === 0) {
-      flashcardList.innerHTML = '';
-      flashcardEmpty.classList.remove('hidden');
-      currentFlashcardSet = null;
-      currentFlashcardIndex = 0;
-    } else {
-      flashcardEmpty.classList.add('hidden');
-      
-      // Store the set and reset index
-      currentFlashcardSet = relevantSets[0];
-      currentFlashcardIndex = 0;
-      
-      // Render slideshow view (single card)
-      renderFlashcardSlideshow();
-    }
-  }
-  
-  function renderFlashcardSlideshow() {
-    if (!currentFlashcardSet || !flashcardList) return;
-    
-    // Limit to 10 cards
-    const cards = currentFlashcardSet.cards.slice(0, 10);
-    
-    if (cards.length === 0) {
-      flashcardList.innerHTML = '<p style="text-align: center; padding: 20px; color: var(--text-secondary);">No flashcards available.</p>';
-      return;
-    }
-    
-    // Clear and show only current card
-    flashcardList.innerHTML = '';
-    const currentCard = cards[currentFlashcardIndex];
-    const cardElement = createFlashcardElement(currentCard, currentFlashcardIndex, currentFlashcardSet.id);
-    flashcardList.appendChild(cardElement);
-    
-    // Add card counter
-    const counter = document.createElement('div');
-    counter.className = 'flashcard-counter';
-    counter.textContent = `${currentFlashcardIndex + 1} / ${cards.length}`;
-    flashcardList.appendChild(counter);
-  }
-  
-  function navigateFlashcard(direction) {
-    if (!currentFlashcardSet) return;
-    
-    const cards = currentFlashcardSet.cards.slice(0, 10);
-    if (cards.length === 0) return;
-    
-    if (direction === 'next') {
-      currentFlashcardIndex = (currentFlashcardIndex + 1) % cards.length;
-    } else if (direction === 'prev') {
-      currentFlashcardIndex = (currentFlashcardIndex - 1 + cards.length) % cards.length;
-    }
-    
-    renderFlashcardSlideshow();
-  }
-  
-  function createFlashcardElement(card, index, setId) {
-    const div = document.createElement('div');
-    div.className = 'flashcard-item';
-    div.dataset.index = index;
-    div.dataset.setId = setId;
-    
-    const inner = document.createElement('div');
-    inner.className = 'flashcard-item__inner';
-    
-    const front = document.createElement('div');
-    front.className = 'flashcard-item__front';
-    const frontText = document.createElement('div');
-    frontText.className = 'flashcard-item__text';
-    frontText.textContent = card.question || card.front || 'Question';
-    front.appendChild(frontText);
-    
-    const back = document.createElement('div');
-    back.className = 'flashcard-item__back';
-    const backText = document.createElement('div');
-    backText.className = 'flashcard-item__text';
-    backText.textContent = card.answer || card.back || 'Answer';
-    back.appendChild(backText);
-    
-    inner.appendChild(front);
-    inner.appendChild(back);
-    div.appendChild(inner);
-    
-    const actions = document.createElement('div');
-    actions.className = 'flashcard-item__actions';
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'flashcard-item__action';
-    deleteBtn.textContent = '×';
-    deleteBtn.title = 'Delete flashcard';
-    deleteBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (confirm('Delete this flashcard?')) {
-        // Remove card from set
-        const set = window.SumVidFlashcardMaker.getFlashcardSetById(setId);
-        if (set) {
-          set.cards.splice(index, 1);
-          if (set.cards.length === 0) {
-            await window.SumVidFlashcardMaker.deleteFlashcardSet(setId);
-          } else {
-            await window.SumVidFlashcardMaker.loadFlashcards(); // Refresh
-            const updatedSet = window.SumVidFlashcardMaker.getFlashcardSetById(setId);
-            if (updatedSet) {
-              updatedSet.cards = set.cards;
-              updatedSet.updatedAt = Date.now();
-              await chrome.storage.local.set({ sumvid_flashcards: window.SumVidFlashcardMaker.getAllFlashcards() });
-            }
-          }
-          await renderFlashcards();
-        }
-      }
-    });
-    actions.appendChild(deleteBtn);
-    div.appendChild(actions);
-    
-    // Click behavior: flip on first click, navigate to next on second click
-    let isFlipped = false;
-    div.addEventListener('click', (e) => {
-      if (e.target === deleteBtn || deleteBtn.contains(e.target) || actions.contains(e.target)) return;
-      
-      if (!isFlipped) {
-        // First click: flip the card
-        div.classList.add('flipped');
-        isFlipped = true;
-      } else {
-        // Second click: navigate to next card (unflipped)
-        div.classList.remove('flipped');
-        navigateFlashcard('next');
-        isFlipped = false;
-      }
-    });
-    
-    return div;
   }
   
   // Notes UI initialization
+  // Notes UI (delegated to NotesUIController)
   async function initializeNotesUI() {
-    const notesContainer = document.getElementById('notes-container');
-    const notesList = document.getElementById('notes-list');
-    const noteEmpty = document.getElementById('note-empty');
-    const createNoteButton = document.getElementById('create-note-button');
-    const notesFilter = document.getElementById('notes-filter');
-    const noteEditorDialog = document.getElementById('note-editor-dialog');
-    const noteEditorForm = document.getElementById('note-editor-form');
-    const noteTitleInput = document.getElementById('note-title');
-    const noteFolderInput = document.getElementById('note-folder');
-    const noteContentInput = document.getElementById('note-content');
-    
-    if (!notesContainer || !notesList || !createNoteButton) {
-      console.warn('[Eureka AI] Notes UI elements not found');
-      return;
+    if (notesUIController) {
+      await notesUIController.initializeNotesUI();
     }
-    
-    // Render notes
-    async function renderNotes(folder = 'all') {
-      if (!window.SumVidNotesManager) return;
-      
-      await window.SumVidNotesManager.loadNotes();
-      let notesToShow = folder === 'all' 
-        ? window.SumVidNotesManager.getAllNotes()
-        : window.SumVidNotesManager.getNotesByFolder(folder);
-      
-      // Sort by updatedAt (newest first)
-      notesToShow.sort((a, b) => (b.updatedAt || b.timestamp) - (a.updatedAt || a.timestamp));
-      
-      if (notesToShow.length === 0) {
-        notesList.innerHTML = '';
-        if (noteEmpty) noteEmpty.classList.remove('hidden');
-      } else {
-        if (noteEmpty) noteEmpty.classList.add('hidden');
-        notesList.innerHTML = '';
-        
-        notesToShow.forEach(note => {
-          const noteElement = createNoteElement(note);
-          notesList.appendChild(noteElement);
-        });
-      }
-      
-      // Update folder filter options
-      if (notesFilter) {
-        const folders = window.SumVidNotesManager.getFolders();
-        const currentValue = notesFilter.value;
-        notesFilter.innerHTML = '<option value="all">All Notes</option>';
-        folders.forEach(folder => {
-          const option = document.createElement('option');
-          option.value = folder;
-          option.textContent = folder;
-          notesFilter.appendChild(option);
-        });
-        notesFilter.value = currentValue;
-      }
-    }
-    
-    function createNoteElement(note) {
-      const div = document.createElement('div');
-      div.className = 'note-item';
-      div.dataset.noteId = note.id;
-      
-      const updatedAt = new Date(note.updatedAt || note.timestamp);
-      const timeStr = updatedAt.toLocaleDateString() + ' ' + updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      
-      div.innerHTML = `
-        <div class="note-item__header">
-          <h4 class="note-item__title">${escapeHtml(note.title)}</h4>
-          <span class="note-item__folder">${escapeHtml(note.folder || 'Uncategorized')}</span>
-        </div>
-        <div class="note-item__content">${escapeHtml(note.content)}</div>
-        <div class="note-item__footer">
-          <span class="note-item__timestamp">${timeStr}</span>
-          <div class="note-item__actions">
-            <button class="note-item__button note-item__button--flashcard" data-action="flashcard" data-note-id="${note.id}">Flashcard</button>
-            <button class="note-item__button note-item__button--edit" data-action="edit" data-note-id="${note.id}">Edit</button>
-            <button class="note-item__button note-item__button--delete" data-action="delete" data-note-id="${note.id}">Delete</button>
-          </div>
-        </div>
-      `;
-      
-      // Add event listeners
-      const flashcardBtn = div.querySelector('[data-action="flashcard"]');
-      const editBtn = div.querySelector('[data-action="edit"]');
-      const deleteBtn = div.querySelector('[data-action="delete"]');
-      
-      if (flashcardBtn) {
-        flashcardBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          await handleGenerateFlashcard(note.id);
-        });
-      }
-      
-      if (editBtn) {
-        editBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          await handleEditNote(note.id);
-        });
-      }
-      
-      if (deleteBtn) {
-        deleteBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (confirm('Delete this note?')) {
-            await handleDeleteNote(note.id);
-          }
-        });
-      }
-      
-      return div;
-    }
-    
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-    
-    async function handleGenerateFlashcard(noteId) {
-      if (!window.SumVidNotesManager || !window.SumVidFlashcardMaker) return;
-      const note = window.SumVidNotesManager.getNoteById(noteId);
-      if (!note || !note.content) return;
-      
-      // Check usage limit from backend API
-      try {
-        const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
-        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-        const token = stored.sumvid_auth_token;
-        
-        if (token) {
-          const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          
-          if (response.ok) {
-            const usage = await response.json();
-            if (usage.enhancementsUsed >= usage.enhancementsLimit) {
-              alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-              return;
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('[Eureka AI] Failed to check usage limit from backend, using local storage fallback:', error);
-        // Fallback to local storage if backend is not available
-        if (window.UsageTracker) {
-          const limitReached = await window.UsageTracker.isLimitReached();
-          if (limitReached) {
-            alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-            return;
-          }
-        }
-      }
-      
-      try {
-        // Note: Usage is tracked and incremented on the backend API
-        // Generate flashcards from note content
-        const response = await chrome.runtime.sendMessage({
-          action: 'generate-flashcards',
-          contentType: 'webpage', // Treat notes as webpage content
-          text: note.content,
-          title: note.title || 'Untitled Note'
-        });
-        
-        if (response?.error) {
-          alert(response.error);
-        } else if (response?.success && response?.flashcards) {
-          // Create flashcard set
-          const setTitle = `${note.title || 'Untitled Note'} - Flashcards`;
-          await window.SumVidFlashcardMaker.createFlashcardSet(setTitle, response.flashcards);
-          await renderFlashcards();
-          alert('Flashcards generated successfully!');
-        }
-        
-        await updateStatusCards();
-      } catch (error) {
-        console.error('[Eureka AI] Error generating flashcards from note:', error);
-        alert('Failed to generate flashcards. Please try again.');
-      }
-    }
-    
-    async function handleEditNote(noteId) {
-      if (!window.SumVidNotesManager || !noteEditorDialog) return;
-      const note = window.SumVidNotesManager.getNoteById(noteId);
-      if (!note) return;
-      
-      document.getElementById('note-editor-title').textContent = 'Edit Note';
-      noteTitleInput.value = note.title;
-      noteFolderInput.value = note.folder || 'Uncategorized';
-      noteContentInput.value = note.content;
-      noteEditorForm.dataset.noteId = noteId;
-      
-      noteEditorDialog.showModal();
-    }
-    
-    async function handleDeleteNote(noteId) {
-      if (!window.SumVidNotesManager) return;
-      await window.SumVidNotesManager.deleteNote(noteId);
-      await renderNotes(notesFilter?.value || 'all');
-    }
-    
-    // Create note button handler
-    createNoteButton.addEventListener('click', () => {
-      if (!noteEditorDialog) return;
-      document.getElementById('note-editor-title').textContent = 'New Note';
-      noteTitleInput.value = '';
-      noteFolderInput.value = 'Uncategorized';
-      noteContentInput.value = '';
-      delete noteEditorForm.dataset.noteId;
-      noteEditorDialog.showModal();
-    });
-    
-    // Filter change handler
-    if (notesFilter) {
-      notesFilter.addEventListener('change', () => {
-        renderNotes(notesFilter.value);
-      });
-    }
-    
-    // Note editor form handler
-    if (noteEditorForm) {
-      noteEditorForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (!window.SumVidNotesManager) return;
-        
-        const title = noteTitleInput.value.trim();
-        const folder = noteFolderInput.value.trim() || 'Uncategorized';
-        const content = noteContentInput.value.trim();
-        
-        if (!title || !content) {
-          alert('Title and content are required');
-          return;
-        }
-        
-        const noteId = noteEditorForm.dataset.noteId;
-        if (noteId) {
-          // Update existing note
-          await window.SumVidNotesManager.updateNote(noteId, { title, folder, content });
-        } else {
-          // Create new note
-          await window.SumVidNotesManager.createNote(title, content, folder);
-        }
-        
-        noteEditorDialog.close();
-        await renderNotes(notesFilter?.value || 'all');
-      });
-    }
-    
-    // Close dialog handlers
-    const cancelButtons = document.querySelectorAll('.note-editor__cancel');
-    cancelButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (noteEditorDialog) noteEditorDialog.close();
-      });
-    });
-    
-    // Initial render
-    await renderNotes();
   }
   
   // Try immediately, then retry if needed
@@ -2214,648 +718,62 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Freemium uses counter (top of sidebar)
   function updateUsesCounter(usage, subscriptionStatus) {
-    try {
-      const usesCounter = document.getElementById('uses-counter');
-      const usesRemainingText = document.getElementById('uses-remaining-text');
-      if (!usesCounter || !usesRemainingText) return;
-
-      if (subscriptionStatus === 'premium') {
-        usesCounter.style.display = 'none';
-        return;
-      }
-
-      if (!usage) {
-        usesCounter.style.display = 'none';
-        return;
-      }
-
-      const remaining = Math.max(0, (usage.enhancementsLimit || 0) - (usage.enhancementsUsed || 0));
-      usesRemainingText.textContent = `${remaining} uses remaining`;
-      usesCounter.style.display = 'block';
-    } catch (e) {
-      // Never let the sidebar crash from counter UI
-      console.warn('[Eureka AI] Failed to update uses counter:', e);
+    if (usageManager) {
+      usageManager.updateUsesCounter(usage, subscriptionStatus);
     }
   }
 
-  // Initialize usage tracking and update status cards
+  // Usage tracking functions (delegated to UsageManager)
   async function updateStatusCards() {
-    // Update cards in account dialog
-    const enhancementsCountEl = document.getElementById('account-enhancements-count');
-    const enhancementsLimitEl = document.getElementById('account-enhancements-limit');
-    const userStatusEl = document.getElementById('account-user-status');
-    const userPlanEl = document.getElementById('account-user-plan');
-    
-    try {
-      // Try to get usage from backend API if user is logged in
-      let usage = null;
-      const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
-      
-      try {
-        // Get auth token from storage
-        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-        const token = stored.sumvid_auth_token;
-        
-        if (token) {
-          // Fetch usage from backend
-          const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            usage = {
-              enhancementsUsed: data.enhancementsUsed || 0,
-              enhancementsLimit: data.enhancementsLimit || 10
-            };
-          }
-        }
-      } catch (error) {
-        console.warn('[Eureka AI] Failed to get usage from backend:', error);
-      }
-      
-      // Fallback to local storage if backend is not available or user is not logged in
-      if (!usage && window.UsageTracker) {
-      await window.UsageTracker.resetDailyUsageIfNeeded();
-        const localUsage = await window.UsageTracker.getUsage();
-        usage = {
-          enhancementsUsed: localUsage.enhancementsUsed,
-          enhancementsLimit: localUsage.enhancementsLimit
-        };
-      }
-      
-      // Default values if neither backend nor local storage is available
-      if (!usage) {
-        usage = {
-          enhancementsUsed: 0,
-          enhancementsLimit: 10
-        };
-      }
-      
-      if (enhancementsCountEl) enhancementsCountEl.textContent = usage.enhancementsUsed;
-      if (enhancementsLimitEl) enhancementsLimitEl.textContent = usage.enhancementsLimit;
-      
-      // Update user status and plan in account dialog
-      const storedToken = await chrome.storage.local.get(['sumvid_auth_token']);
-      const authToken = storedToken.sumvid_auth_token;
-      let subscriptionStatus = 'freemium';
-      
-      if (authToken) {
-        try {
-          const profileResponse = await fetch(`${BACKEND_URL}/api/user/profile`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${authToken}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          
-          if (profileResponse.ok) {
-            const profileData = await profileResponse.json();
-            const userProfile = profileData.user || profileData;
-            const displayName = (userProfile.name && userProfile.name.trim()) 
-              ? userProfile.name 
-              : (userProfile.email || 'User');
-            subscriptionStatus = userProfile.subscription_status || 'freemium';
-            
-            if (userStatusEl) {
-              userStatusEl.textContent = displayName;
-            }
-            if (userPlanEl) {
-              userPlanEl.textContent = subscriptionStatus === 'premium' ? 'PRO' : 'Freemium';
-            }
-          }
-        } catch (error) {
-          console.warn('[Eureka AI] Failed to get user profile:', error);
-        }
-      } else {
-        if (userStatusEl) {
-          userStatusEl.textContent = 'Not Logged In';
-        }
-        if (userPlanEl) {
-          userPlanEl.textContent = 'Freemium';
-        }
-      }
-      
-      // Update uses counter (only for freemium users)
-      updateUsesCounter(usage, subscriptionStatus);
-      
-      // Update button states based on usage
-      const summarizeButton = document.getElementById('summarize-button');
-      const makeTestButton = document.getElementById('make-test-button');
-      const limitReached = usage.enhancementsUsed >= usage.enhancementsLimit;
-      
-      if (summarizeButton) {
-        summarizeButton.disabled = limitReached;
-        if (limitReached) {
-          summarizeButton.title = 'Daily limit reached. Reset tomorrow.';
-        }
-      }
-      if (makeTestButton) {
-        makeTestButton.disabled = limitReached;
-        if (limitReached) {
-          makeTestButton.title = 'Daily limit reached. Reset tomorrow.';
-        }
-      }
-    } catch (error) {
-      console.error('Error updating status cards:', error);
-      // Set default values on error
-      if (enhancementsCountEl) enhancementsCountEl.textContent = '0';
-      if (enhancementsLimitEl) enhancementsLimitEl.textContent = '10';
+    if (usageManager) {
+      await usageManager.updateStatusCards();
     }
   }
-  updateStatusCards();
-
-  // Helper function to check usage limit from backend API
-  async function checkUsageLimit() {
-    try {
-      const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
-      const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-      const token = stored.sumvid_auth_token;
-      
-      if (token) {
-        const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (response.ok) {
-          const usage = await response.json();
-          return usage.enhancementsUsed >= usage.enhancementsLimit;
-        }
-      }
-    } catch (error) {
-      console.warn('[Eureka AI] Failed to check usage limit from backend:', error);
+  
+  // Initialize status cards after managers are loaded
+  setTimeout(() => {
+    if (usageManager) {
+      usageManager.updateStatusCards();
     }
-    
-    // Fallback to local storage if backend is not available
+  }, 500);
+
+  async function checkUsageLimit() {
+    if (usageManager) {
+      return await usageManager.checkUsageLimit();
+    }
+    // Fallback
     if (window.UsageTracker) {
       return await window.UsageTracker.isLimitReached();
     }
-    
-    return false; // Allow usage on error
+    return false;
   }
 
-  // Copy URL button handler
-  const copyUrlButton = document.getElementById('copy-url-button');
-  if (copyUrlButton) {
-    copyUrlButton.addEventListener('click', async (e) => {
-      const urlToCopy = e.currentTarget.dataset.fullUrl;
-      if (!urlToCopy) return;
-      
-      try {
-        await navigator.clipboard.writeText(urlToCopy);
-        // Visual feedback
-        const originalTitle = e.currentTarget.title;
-        e.currentTarget.title = 'Copied!';
-        e.currentTarget.style.color = '#4CAF50';
-        setTimeout(() => {
-          e.currentTarget.title = originalTitle || 'Copy URL';
-          e.currentTarget.style.color = '';
-        }, 2000);
-      } catch (error) {
-        console.error('Failed to copy URL:', error);
-        // Fallback for older browsers
-        const textArea = document.createElement('textarea');
-        textArea.value = urlToCopy;
-        textArea.style.position = 'fixed';
-        textArea.style.opacity = '0';
-        document.body.appendChild(textArea);
-        textArea.select();
-        try {
-          document.execCommand('copy');
-          e.currentTarget.title = 'Copied!';
-          e.currentTarget.style.color = '#4CAF50';
-          setTimeout(() => {
-            e.currentTarget.title = 'Copy URL';
-            e.currentTarget.style.color = '';
-          }, 2000);
-        } catch (fallbackError) {
-          console.error('Fallback copy failed:', fallbackError);
-        }
-        document.body.removeChild(textArea);
-      }
-    });
-  }
-
-  // Manual Summarize button handler
-  const summarizeButton = document.getElementById('summarize-button');
-  if (summarizeButton) {
-    summarizeButton.addEventListener('click', async () => {
-      if (!currentVideoInfo) {
-        alert('No content available to summarize.');
-        return;
-      }
-
-      // Check for content based on type (transcript for videos, text for webpages/PDFs)
-      const contentType = currentVideoInfo.type || 'video';
-      const hasContent = contentType === 'video' 
-        ? currentVideoInfo.transcript 
-        : (currentVideoInfo.text || currentVideoInfo.needsServerExtraction);
-      
-      if (!hasContent) {
-        const errorMsg = contentType === 'video' 
-          ? 'No video transcript available.'
-          : contentType === 'pdf'
-          ? 'No PDF content available.'
-          : 'No webpage content available.';
-        alert(errorMsg);
-        return;
-      }
-
-      // Check usage limit from backend API
-      try {
-        const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
-        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-        const token = stored.sumvid_auth_token;
-        
-        if (token) {
-          const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          
-          if (response.ok) {
-            const usage = await response.json();
-            if (usage.enhancementsUsed >= usage.enhancementsLimit) {
-              alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-              return;
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('[Eureka AI] Failed to check usage limit from backend, using local storage fallback:', error);
-        // Fallback to local storage if backend is not available
-      if (window.UsageTracker) {
-        const limitReached = await window.UsageTracker.isLimitReached();
-        if (limitReached) {
-          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-          return;
-          }
-        }
-      }
-
-      // Show loading state
-      summarizeButton.disabled = true;
-      summarizeButton.textContent = 'Generating...';
-      
-      // Show summary container and content
-      if (summaryContainer) summaryContainer.classList.remove('hidden');
-      if (summaryContent) {
-        summaryContent.style.display = 'block';
-        summaryContent.innerHTML = '<div class="summary-text">Generating summary...</div>';
-      }
-      showLoadingIndicator(summaryContainer);
-
-      try {
-        // Note: Usage is tracked and incremented on the backend API
-        // Generate summary - use appropriate content field based on type
-        const contentText = contentType === 'video' 
-          ? currentVideoInfo.transcript 
-          : (currentVideoInfo.text || '');
-        await summarizeText(contentText, false, '');
-        
-        // Show regenerate button, hide summarize button
-        const regenerateButton = document.getElementById('regenerate-summary-button');
-        if (regenerateButton) regenerateButton.style.display = 'block';
-        summarizeButton.style.display = 'none';
-        
-        // Update status cards
-        await updateStatusCards();
-      } catch (error) {
-        console.error('Error generating summary:', error);
-        alert('Failed to generate summary. Please try again.');
-        summarizeButton.disabled = false;
-        summarizeButton.textContent = 'Summarize';
-      }
-    });
-  }
-
-  // Manual Make Test button handler
-  const makeTestButton = document.getElementById('make-test-button');
-  if (makeTestButton) {
-    makeTestButton.addEventListener('click', async () => {
-      if (!currentVideoInfo) {
-        alert('No content available to generate quiz from.');
-        return;
-      }
-
-      // Check for content based on type (transcript for videos, text for webpages/PDFs)
-      const contentType = currentVideoInfo.type || 'video';
-      const hasContent = contentType === 'video' 
-        ? currentVideoInfo.transcript 
-        : (currentVideoInfo.text || currentVideoInfo.needsServerExtraction);
-      
-      if (!hasContent) {
-        const errorMsg = contentType === 'video' 
-          ? 'No video transcript available.'
-          : contentType === 'pdf'
-          ? 'No PDF content available.'
-          : 'No webpage content available.';
-        alert(errorMsg);
-        return;
-      }
-
-      // Check usage limit from backend API
-      try {
-        const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
-        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-        const token = stored.sumvid_auth_token;
-        
-        if (token) {
-          const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          
-          if (response.ok) {
-            const usage = await response.json();
-            if (usage.enhancementsUsed >= usage.enhancementsLimit) {
-              alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-              return;
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('[Eureka AI] Failed to check usage limit from backend, using local storage fallback:', error);
-        // Fallback to local storage if backend is not available
-      if (window.UsageTracker) {
-        const limitReached = await window.UsageTracker.isLimitReached();
-        if (limitReached) {
-          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-          return;
-          }
-        }
-      }
-
-      // Show loading state
-      makeTestButton.disabled = true;
-      makeTestButton.textContent = 'Generating...';
-      
-      // Show quiz container and content
-      if (quizContainer) quizContainer.classList.remove('hidden');
-      if (quizContent) {
-        quizContent.style.display = 'block';
-        quizContent.innerHTML = 'Generating questions...';
-      }
-      showLoadingIndicator(quizContainer);
-
-      try {
-        // Get summary if available
-        const videoId = getVideoId(currentVideoInfo.url);
-        let summaryText = '';
-        if (videoId) {
-          const cachedSummary = await loadGeneratedContent(videoId, 'summary');
-          if (cachedSummary) {
-            const summaryEl = document.querySelector('.summary-text');
-            if (summaryEl) summaryText = summaryEl.textContent;
-          }
-        }
-
-        // Note: Usage is tracked and incremented on the backend API
-        // Generate quiz
-        await generateQuiz(currentVideoInfo.transcript, summaryText, '');
-        
-        // Show regenerate button, hide make test button
-        const regenerateButton = document.getElementById('regenerate-quiz-button');
-        if (regenerateButton) regenerateButton.style.display = 'block';
-        makeTestButton.style.display = 'none';
-        
-        // Update status cards
-        await updateStatusCards();
-      } catch (error) {
-        console.error('Error generating quiz:', error);
-        alert('Failed to generate quiz. Please try again.');
-        makeTestButton.disabled = false;
-        makeTestButton.textContent = 'Make Test';
-      }
-    });
-  }
+  // Button handlers (delegated to ButtonHandlers)
+  // ButtonHandlers handles all button click events
   
-  // Also ensure event listeners are attached after a short delay
-  setTimeout(ensureEventListeners, 500);
-  
-  async function displayVideoInfoFromCache(videoInfo, videoId, cachedSummary, cachedQuiz, cachedChat) {
-    currentVideoInfo = videoInfo;
-    userContext = { ...DEFAULT_CONTEXT };
-    
-    // Try to get basic video info without transcript
-    try {
-      const basicInfo = await sendMessageWithTimeout({ type: 'GET_BASIC_VIDEO_INFO' });
-      if (basicInfo && !basicInfo.error) {
-        currentVideoInfo = { ...videoInfo, ...basicInfo };
-        if (videoTitle) {
-          // Decode HTML entities (like &#39; to ') before displaying
-          const titleText = basicInfo.title || 'Unknown Title';
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = titleText;
-          videoTitle.textContent = tempDiv.textContent || tempDiv.innerText || titleText;
-        }
-        if (channelName) {
-          channelName.textContent = basicInfo.channel || 'Unknown Channel';
-        }
-      }
-    } catch (error) {
-      console.warn('Could not get basic video info:', error);
-    }
-    
-    // Display cached content
-    if (cachedSummary) {
-      summaryContainer?.classList.remove('hidden');
-      if (summaryContent) {
-        summaryContent.style.display = 'block';
-      }
-      const summaryTextElement = document.querySelector('.summary-text');
-      const summaryInfoCenter = document.querySelector('.summary-info-center');
-      if (summaryTextElement) {
-        summaryTextElement.innerHTML = cachedSummary;
-      }
-      if(summaryInfoCenter){
-        summaryInfoCenter.classList.remove('hidden');
-        updateInfoCenter(currentVideoInfo?.duration, cachedSummary);
-      }
-      showCompletionBadge(summaryContainer);
-      summaryContent?.classList.add('collapsed');
-      summaryHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
-      // Hide summarize button, show regenerate button
-      const summarizeButton = document.getElementById('summarize-button');
-      const regenerateSummaryButton = document.getElementById('regenerate-summary-button');
-      if (summarizeButton) summarizeButton.style.display = 'none';
-      if (regenerateSummaryButton) regenerateSummaryButton.style.display = 'block';
-    } else {
-      // No cached summary - show summarize button, hide regenerate
-      const summarizeButton = document.getElementById('summarize-button');
-      const regenerateSummaryButton = document.getElementById('regenerate-summary-button');
-      if (summarizeButton) summarizeButton.style.display = 'block';
-      if (regenerateSummaryButton) regenerateSummaryButton.style.display = 'none';
-    }
-    
-    // Always show questions section with cached content
-    if (cachedChat) {
-      await loadCachedChat(videoId);
-    } else {
-      // Clear chat if no cached content
-      if (chatMessages) {
-        chatMessages.innerHTML = '';
-        playfulMessageShown = false;
-        showPlayfulMessage();
-      }
-    }
-    
-    // Always show quiz section whether there's cached content or not
-    quizContainer?.classList.remove('hidden');
-    if (cachedQuiz) {
-      if (quizContent) {
-        quizContent.style.display = 'block';
-        quizContent.innerHTML = cachedQuiz;
-        quizContent.classList.add('collapsed');
-      }
-      quizHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
-      initializeQuizNavigation();
-      addSubmitButton();
-      showCompletionBadge(quizContainer);
-      // Hide make test button, show regenerate button
-      const makeTestButton = document.getElementById('make-test-button');
-      const regenerateQuizButton = document.getElementById('regenerate-quiz-button');
-      if (makeTestButton) makeTestButton.style.display = 'none';
-      if (regenerateQuizButton) regenerateQuizButton.style.display = 'block';
-    } else {
-      // No cached quiz - show make test button, hide regenerate, hide content
-      if (quizContent) {
-        quizContent.style.display = 'none';
-      }
-      const makeTestButton = document.getElementById('make-test-button');
-      const regenerateQuizButton = document.getElementById('regenerate-quiz-button');
-      if (makeTestButton) makeTestButton.style.display = 'block';
-      if (regenerateQuizButton) regenerateQuizButton.style.display = 'none';
-      if (quizContent) {
-        quizContent.style.display = 'none';
-      quizContent.classList.add('collapsed');
-      }
-      quizHeader?.querySelector('.collapse-button')?.classList.add('collapsed');
-    }
-    
-    // Update status cards
-    await updateStatusCards();
-    
-    // Show status section
-    // Status cards are now in account dialog, no need to show status section
-    
-    showState(videoInfoState);
-    // Ensure event listeners are attached after DOM is updated
-    setTimeout(ensureEventListeners, 100);
-  }
-  
-  // Display content info (works for video, webpage, PDF)
+  // Content display functions (delegated to ContentDisplayManager)
   async function displayVideoInfo(contentInfo) {
-    if (!contentInfo) {
-      // No content info, but don't show error state - show interface anyway
-      showState(videoInfoState);
-      if (chatMessages && chatMessages.children.length === 0) {
-        showPlayfulMessage();
-      }
-      return;
+    if (contentDisplayManager) {
+      await contentDisplayManager.displayVideoInfo(contentInfo);
     }
-    
-    currentVideoInfo = contentInfo;
-    userContext = { ...DEFAULT_CONTEXT };
-    
-    if (videoTitle) {
-      // Decode HTML entities (like &#39; to ') before displaying
-      const titleText = contentInfo.title || 'Untitled Content';
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = titleText;
-      videoTitle.textContent = tempDiv.textContent || tempDiv.innerText || titleText;
+  }
+
+  async function displayVideoInfoFromCache(videoInfo, videoId, cachedSummary, cachedQuiz, cachedChat) {
+    if (contentDisplayManager) {
+      await contentDisplayManager.displayVideoInfoFromCache(videoInfo, videoId, cachedSummary, cachedQuiz, cachedChat);
     }
-    if (channelName) {
-      // Show channel for videos, URL/source for webpages/PDFs
-      const sourceText = contentInfo.channel || contentInfo.url || 'Unknown Source';
-      const copyUrlButton = document.getElementById('copy-url-button');
-      
-      if (contentInfo.url && !contentInfo.channel) {
-        // For URLs (webpages/PDFs): hide the text, show copy button
-        if (channelName) {
-          channelName.textContent = '';
-          channelName.style.display = 'none';
-        }
-        if (copyUrlButton) {
-          copyUrlButton.dataset.fullUrl = contentInfo.url;
-          copyUrlButton.style.display = 'flex';
-          // Preserve the SVG icon when setting text
-          const svg = copyUrlButton.querySelector('svg');
-          if (svg) {
-            copyUrlButton.innerHTML = svg.outerHTML + ' Copy URL';
-          } else {
-            copyUrlButton.textContent = 'Copy URL';
-          }
-        }
-      } else {
-        // For channels (videos): show the text, hide copy button
-        if (channelName) {
-          channelName.textContent = sourceText;
-          channelName.style.display = 'block';
-        }
-        if (copyUrlButton) {
-          copyUrlButton.style.display = 'none';
-        }
-      }
+  }
+
+  function showState(stateElement) {
+    if (contentDisplayManager) {
+      contentDisplayManager.showState(stateElement);
     }
-    
-    // Update duration in info center (only for videos)
-    if (contentInfo.duration) {
-      updateInfoCenter(contentInfo.duration, '');
+  }
+
+  async function initializeExtension() {
+    if (contentDisplayManager) {
+      await contentDisplayManager.initializeExtension();
     }
-    
-    // Always show containers, but disable buttons if no content
-      summaryContainer?.classList.remove('hidden');
-      quizContainer?.classList.remove('hidden');
-    
-    // Status cards are now in account dialog, no need to show status section
-    
-    // Check if we have content (transcript for video, text for webpage/PDF)
-    const hasContent = contentInfo.transcript || contentInfo.text || contentInfo.needsServerExtraction;
-    const summarizeButton = document.getElementById('summarize-button');
-    
-    if (hasContent) {
-      // Enable summarize button with normal text
-      if (summarizeButton) {
-        summarizeButton.disabled = false;
-        summarizeButton.textContent = 'Summarize';
-        summarizeButton.classList.remove('btn--disabled');
-      }
-      // Chat section is always visible
-      // But keep content hidden until manually generated
-      if (summaryContent) summaryContent.style.display = 'none';
-      if (quizContent) quizContent.style.display = 'none';
-    } else {
-      // Disable summarize button and show "No content to summarize"
-      if (summarizeButton) {
-        summarizeButton.disabled = true;
-        summarizeButton.textContent = 'No content to summarize';
-        summarizeButton.classList.add('btn--disabled');
-      }
-    }
-    
-    showState(videoInfoState);
-    // Show playful message if chat is empty
-    if (chatMessages && chatMessages.children.length === 0) {
-      showPlayfulMessage();
-    }
-    // Ensure event listeners are attached after DOM is updated
-    setTimeout(ensureEventListeners, 100);
   }
   
   // Listen for content info updates
@@ -2880,275 +798,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // }
   });
   
-  // Regenerate quiz button handler
-  const regenerateQuizButton = document.getElementById('regenerate-quiz-button');
-  if (regenerateQuizButton) {
-    regenerateQuizButton.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (!currentVideoInfo?.url || !summaryContent) {
-      console.warn('Missing video info or summary content');
-      return;
-    }
-    // If quiz already exists, show context bar as a floating popup
-    if (quizContent && quizContent.textContent && !quizContent.textContent.includes('Generating')) {
-      quizContextBar.classList.remove('hidden');
-      quizContextInput.value = '';
-      quizContextInput.focus();
-      // No need to position relative to button; CSS handles centering
-      // Hide on click outside
-      const handleClickOutside = (event) => {
-        if (!quizContextBar.contains(event.target) && event.target !== regenerateQuizButton) {
-          quizContextBar.classList.add('hidden');
-          document.removeEventListener('mousedown', handleClickOutside);
-        }
-      };
-      document.addEventListener('mousedown', handleClickOutside);
-      // Submit on button or Enter
-      const submitContext = async () => {
-        quizContextBar.classList.add('hidden');
-        document.removeEventListener('mousedown', handleClickOutside);
-
-        // Check usage limit before regenerating
-        if (window.UsageTracker) {
-          const limitReached = await window.UsageTracker.isLimitReached();
-          if (limitReached) {
-            alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-            return;
-          }
-        }
-
-        // Clear cached quiz for this video
-        const videoId = getVideoId(currentVideoInfo.url);
-        if (videoId) {
-          chrome.storage.local.remove([`quiz_${videoId}`]);
-        }
-        showLoadingIndicator(quizContainer);
-        if (quizContent) quizContent.textContent = 'Generating new quiz questions...';
-        try {
-          // Note: Usage is tracked and incremented on the backend API
-          if (!currentVideoInfo.transcript) {
-            const transcriptResponse = await sendMessageWithTimeout({ type: 'REQUEST_VIDEO_INFO' });
-            if (transcriptResponse?.error) throw new Error('Failed to get transcript');
-            await new Promise((resolve) => {
-              const checkTranscript = () => {
-                chrome.storage.local.get(['currentVideoInfo'], (result) => {
-                  if (result.currentVideoInfo?.transcript) {
-                    currentVideoInfo = result.currentVideoInfo;
-                    resolve();
-                  } else {
-                    setTimeout(checkTranscript, 500);
-                  }
-                });
-              };
-              checkTranscript();
-            });
-          }
-          const summaryTextElement = document.querySelector('#summary-content .summary-text');
-          const summaryText = summaryTextElement ? summaryTextElement.innerHTML : '';
-          userContext.quiz = quizContextInput.value;
-          await generateQuiz(currentVideoInfo.transcript, summaryText, quizContextInput.value);
-          await updateStatusCards();
-        } catch (error) {
-          if (quizContent) quizContent.textContent = `Failed to regenerate quiz: ${error.message}`;
-          showCompletionBadge(quizContainer);
-        }
-      };
-      quizContextSubmit.onclick = submitContext;
-      quizContextInput.onkeydown = (ev) => { if (ev.key === 'Enter') submitContext(); };
-      return;
-    }
-      // Default: no quiz exists, proceed with regeneration after checking usage
-      // Check usage limit before regenerating
-      if (window.UsageTracker) {
-        const limitReached = await window.UsageTracker.isLimitReached();
-        if (limitReached) {
-          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-          return;
-        }
-      }
-      
-      // Note: Usage is tracked and incremented on the backend API
-      // Proceed with default regeneration
-      showLoadingIndicator(quizContainer);
-      if (quizContent) {
-        quizContent.style.display = 'block';
-        quizContent.textContent = 'Generating quiz questions...';
-      }
-      
-      try {
-        if (!currentVideoInfo.transcript) {
-          const transcriptResponse = await sendMessageWithTimeout({ type: 'REQUEST_VIDEO_INFO' });
-          if (transcriptResponse?.error) throw new Error('Failed to get transcript');
-          await new Promise((resolve) => {
-            const checkTranscript = () => {
-              chrome.storage.local.get(['currentVideoInfo'], (result) => {
-                if (result.currentVideoInfo?.transcript) {
-                  currentVideoInfo = result.currentVideoInfo;
-                  resolve();
-                } else {
-                  setTimeout(checkTranscript, 500);
-                }
-              });
-            };
-            checkTranscript();
-          });
-        }
-        
-        const summaryTextElement = document.querySelector('#summary-content .summary-text');
-        const summaryText = summaryTextElement ? summaryTextElement.innerHTML : '';
-        
-        // Clear cached quiz
-          const videoId = getVideoId(currentVideoInfo.url);
-          if (videoId) {
-          chrome.storage.local.remove([`quiz_${videoId}`]);
-        }
-        
-        await generateQuiz(currentVideoInfo.transcript, summaryText, '');
-        
-        // Button visibility is handled in generateQuiz function
-        await updateStatusCards();
-      } catch (error) {
-        if (quizContent) {
-          quizContent.textContent = `Failed to regenerate quiz: ${error.message}`;
-          quizContent.style.display = 'block';
-        }
-        showCompletionBadge(quizContainer);
-      }
-    });
-  }
-
-  // Regenerate summary button handler
-    const regenerateSummaryButton = document.getElementById('regenerate-summary-button');
-  if (regenerateSummaryButton) {
-    console.log('Regenerate summary button found, attaching listener');
-      regenerateSummaryButton.addEventListener('click', async (e) => {
-        console.log('Regenerate summary button clicked');
-        e.stopPropagation();
-        if (!currentVideoInfo?.transcript) {
-          console.warn('No transcript available for summary regeneration');
-          // Try to get transcript first
-          try {
-            const transcriptResponse = await sendMessageWithTimeout({ type: 'REQUEST_VIDEO_INFO' });
-            if (transcriptResponse?.error) {
-              console.error('Failed to get transcript:', transcriptResponse.error);
-              return;
-            }
-            // Wait for transcript to be available
-            await new Promise((resolve) => {
-              const checkTranscript = () => {
-                chrome.storage.local.get(['currentVideoInfo'], (result) => {
-                  if (result.currentVideoInfo?.transcript) {
-                    currentVideoInfo = result.currentVideoInfo;
-                    resolve();
-                  } else {
-                    setTimeout(checkTranscript, 500);
-                  }
-                });
-              };
-              checkTranscript();
-            });
-          } catch (error) {
-            console.error('Failed to get transcript for summary regeneration:', error);
-            return;
-          }
-        }
-        
-        // If summary already exists, show context bar as a floating popup
-        if (summaryContent && summaryContent.textContent && !summaryContent.textContent.includes('Generating')) {
-          summaryContextBar.classList.remove('hidden');
-          summaryContextInput.value = '';
-          summaryContextInput.focus();
-          // Hide on click outside
-          const handleClickOutside = (event) => {
-            if (!summaryContextBar.contains(event.target) && event.target !== regenerateSummaryButton) {
-              summaryContextBar.classList.add('hidden');
-              document.removeEventListener('mousedown', handleClickOutside);
-            }
-          };
-          document.addEventListener('mousedown', handleClickOutside);
-          // Submit on button or Enter
-          const submitContext = async () => {
-            summaryContextBar.classList.add('hidden');
-            document.removeEventListener('mousedown', handleClickOutside);
-
-          // Check usage limit before regenerating
-          if (window.UsageTracker) {
-            const limitReached = await window.UsageTracker.isLimitReached();
-            if (limitReached) {
-              alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-              return;
-            }
-          }
-
-            // Clear cached content for this video
-            const videoId = getVideoId(currentVideoInfo.url);
-            if (videoId) {
-              chrome.storage.local.remove([
-                `summary_${videoId}`,
-                `quiz_${videoId}`,
-                `chat_${videoId}`
-              ]);
-            }
-          
-          // Note: Usage is tracked and incremented on the backend API
-            userContext.summary = summaryContextInput.value;
-          await summarizeText(currentVideoInfo.transcript, true, summaryContextInput.value);
-            if (chatMessages) {
-              chatMessages.innerHTML = '';
-              playfulMessageShown = false;
-              showPlayfulMessage();
-            }
-          await updateStatusCards();
-          };
-          summaryContextSubmit.onclick = submitContext;
-          summaryContextInput.onkeydown = (ev) => { if (ev.key === 'Enter') submitContext(); };
-          return;
-        }
-        // Default: no summary exists or summary is being generated, proceed with regeneration
-        console.log('Proceeding with summary regeneration');
-      
-      // Check usage limit before regenerating
-      if (window.UsageTracker) {
-        const limitReached = await window.UsageTracker.isLimitReached();
-        if (limitReached) {
-          alert('Daily enhancement limit reached. Your limit will reset tomorrow.');
-          return;
-        }
-      }
-      
-        // Clear cached content for this video
-        const videoId = getVideoId(currentVideoInfo.url);
-        if (videoId) {
-          chrome.storage.local.remove([
-            `summary_${videoId}`,
-            `quiz_${videoId}`,
-            `chat_${videoId}`
-          ]);
-        }
-      
-      // Note: Usage is tracked and incremented on the backend API
-        userContext.summary = '';
-      await summarizeText(currentVideoInfo.transcript, true, '');
-        if (chatMessages) {
-          chatMessages.innerHTML = '';
-          playfulMessageShown = false;
-          showPlayfulMessage();
-        }
-      await updateStatusCards();
-    });
-  } else {
-    console.warn('Regenerate summary button not found');
-  }
-  
-  function showState(stateElement) {
-    if (!stateElement) return;
-
-    if (loadingState) loadingState.classList.add('hidden');
-    if (noVideoState) noVideoState.classList.add('hidden');
-    if (videoInfoState) videoInfoState.classList.add('hidden');
-    
-    stateElement.classList.remove('hidden');
-  }
+  // Regenerate button handlers (delegated to ButtonHandlers)
+  // ButtonHandlers handles all regenerate button functionality
 
   // Function to ensure event listeners are properly attached
   function ensureEventListeners() {
@@ -3197,98 +848,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Listen for selection-clarify messages from content scripts
-  let isProcessingClarify = false; // Prevent duplicate processing
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === 'selection-clarify') {
-      // Prevent duplicate processing
-      if (isProcessingClarify) {
-        console.warn('[Eureka AI] Clarify request already being processed');
-        sendResponse({ success: false, error: 'Already processing' });
-        return false;
-      }
-      
-      isProcessingClarify = true;
-      
-      (async () => {
-        try {
-          // Get current content info for context
-          const stored = await chrome.storage.local.get(['currentContentInfo', 'clarifyRequest']);
-          const contentInfo = stored.currentContentInfo || currentVideoInfo;
-          const clarifyRequest = stored.clarifyRequest;
-          
-          // Use text from message or from stored clarifyRequest
-          const textToClarify = message.text || (clarifyRequest?.text);
-          
-          if (!textToClarify) {
-            console.warn('[Eureka AI] No text to clarify');
-            isProcessingClarify = false;
-            sendResponse({ success: false, error: 'No text provided' });
-            return;
-          }
-          
-          // Build system prompt with context (not shown to user)
-          let systemPrompt = `Please clarify the following text in the context of the current webpage:\n\n"${textToClarify}"\n\n`;
-          
-          // Get combined context (webpage/video/PDF + uploaded PDF)
-          const combinedContext = await getCombinedContext();
-          
-          if (combinedContext) {
-            // Include context in system prompt
-            const contextSnippet = combinedContext.substring(0, 2000); // First 2000 chars for context
-            systemPrompt += `Here is the context:\n\n${contextSnippet}`;
-          }
-          
-          // Show only the user's actual question to the chat UI
-          const userMessage = `Clarify this for me: "${textToClarify}"`;
-          if (chatMessages) {
-            addChatMessage(userMessage, true); // true = isUser
-          }
-          
-          // Clear input
-          if (questionInput) {
-            questionInput.value = '';
-          }
-          
-          // Send system prompt to backend via background script (which handles context automatically)
-          // The system prompt includes context but won't be shown to user
-          const response = await chrome.runtime.sendMessage({
-            action: 'sidechat',
-            message: systemPrompt,
-            chatHistory: [],
-            context: combinedContext ? combinedContext.substring(0, 5000) : '' // Include combined context for clarification
-          });
-          
-          if (response?.error) {
-            addChatMessage(`Error: ${response.error}`, false); // false = assistant
-          } else if (response?.reply) {
-            addChatMessage(response.reply, false); // false = assistant
-          } else {
-            addChatMessage('I apologize, but I was unable to clarify that text. Please try again.', false); // false = assistant
-          }
-          
-          // Clear the clarify request from storage
-          chrome.storage.local.remove(['clarifyRequest']);
-          
-          // Update status cards
-          await updateStatusCards();
-          
-          isProcessingClarify = false;
-          sendResponse({ success: true });
-        } catch (error) {
-          console.error('[Eureka AI] Error handling selection-clarify:', error);
-          if (chatMessages) {
-            addChatMessage(`Error: ${error.message}`, false); // false = assistant
-          }
-          isProcessingClarify = false;
-          sendResponse({ success: false, error: error.message });
-        }
-      })();
-      return true; // Indicate that sendResponse will be called asynchronously
-    }
-    return false;
-  });
-  
-  // Note: clarify requests are now handled by the message listener above
-  // No need to check on load as the background script sends the message directly
+  // Clarify handler (delegated to ClarifyHandler)
+  // ClarifyHandler handles all selection-clarify messages
 });

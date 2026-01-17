@@ -1151,8 +1151,15 @@ input:checked + .slider:before {
   position: relative;
 }
 
+/* Hide small navigation arrows in quiz bottom controls */
+.quiz-navigation .nav-button,
+.quiz-navigation-wrapper .nav-button,
+.quiz-navigation-wrapper .quiz-nav-controls .nav-button {
+  display: none !important;
+}
+
 .quiz-content-wrapper {
-  flex: 1;
+  flex: 1.2; /* Increased from 1 to give more space to question area */
   min-width: 0;
 }
 
@@ -1161,12 +1168,12 @@ input:checked + .slider:before {
   color: white;
   border: none;
   border-radius: 8px;
-  padding: 16px 20px;
-  font-size: 24px;
+  padding: 12.8px 16px; /* Reduced by 20% from 16px 20px */
+  font-size: 19.2px; /* Reduced by 20% from 24px */
   font-weight: bold;
   cursor: pointer;
   transition: all 0.2s ease;
-  min-width: 60px;
+  min-width: 48px; /* Reduced by 20% from 60px */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1424,6 +1431,31 @@ input:checked + .slider:before {
 .chat-message.assistant {
   margin-right: auto;
   max-width: 80%;
+  text-align: left !important;
+}
+
+.chat-message.assistant p {
+  margin: 8px 0;
+  text-align: left;
+  line-height: 1.6;
+}
+
+.chat-message.assistant strong {
+  font-weight: 600;
+  color: inherit;
+}
+
+.chat-message.assistant ol,
+.chat-message.assistant ul {
+  margin: 8px 0;
+  padding-left: 20px;
+  text-align: left;
+}
+
+.chat-message.assistant li {
+  margin: 4px 0;
+  text-align: left;
+  line-height: 1.6;
 }
 
 .usage-limit-message {
@@ -2416,6 +2448,17 @@ dialog[open] > * {
   padding: 16px !important;
 }
 
+/* Remove scrollbar for flashcard-content - it should expand to fit content */
+#tab-flashcards.active .flashcard-content,
+#tab-flashcards.active .summary-content#flashcard-content {
+  overflow: visible !important;
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+  max-height: none !important;
+  height: auto !important;
+  min-height: auto !important;
+}
+
 /* Base styles for flashcard-content - match summary-content pattern EXACTLY */
 .flashcard-content {
   padding: 16px;
@@ -2427,6 +2470,11 @@ dialog[open] > * {
   line-height: 1.6;
   color: var(--text-primary);
   transition: max-height 0.3s ease-out;
+  overflow: visible !important; /* Remove scrollbar - content should expand naturally */
+  overflow-y: visible !important; /* Remove vertical scrollbar */
+  overflow-x: visible !important; /* Remove horizontal scrollbar */
+  min-height: auto !important; /* Allow natural height */
+  height: auto !important; /* Allow height to grow with content */
   overflow-y: auto !important; /* Force scrollbar */
   overflow-x: hidden !important;
   flex: 1 1 auto; /* Grow and shrink, but maintain auto basis */

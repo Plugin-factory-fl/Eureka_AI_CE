@@ -304,8 +304,24 @@
         </div>
       `;
       
+      // Track if card is flipped
+      let isFlipped = false;
+      
       cardElement.addEventListener('click', () => {
-        cardElement.classList.toggle('flipped');
+        if (!isFlipped) {
+          // First click: Flip the card
+          cardElement.classList.add('flipped');
+          isFlipped = true;
+        } else {
+          // Second click: Advance to next card (if not last), resetting to front side
+          const isLastCard = this.currentFlashcardIndex === cardsToShow.length - 1;
+          if (!isLastCard) {
+            // Advance to next card
+            this.currentFlashcardIndex++;
+            this.renderFlashcardSlideshow();
+          }
+          // If it's the last card and already flipped, stay on back side (do nothing)
+        }
       });
       
       this.flashcardList.appendChild(cardElement);

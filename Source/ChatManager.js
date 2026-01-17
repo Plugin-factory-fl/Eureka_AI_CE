@@ -99,7 +99,38 @@
       
       const messageElement = document.createElement('div');
       messageElement.className = `chat-message ${isUser ? 'user' : 'assistant'}`;
-      messageElement.textContent = message;
+      
+      // Format message content for assistant messages (left-align, parse lists, etc.)
+      if (!isUser && message) {
+        let formattedMessage = message;
+        
+        // Parse numbered lists: Convert "1. text 2. text" to proper list format
+        // Match patterns like "1. ", "2. ", etc. at start of lines
+        formattedMessage = formattedMessage.replace(/(\d+\.\s+[^\n]+(?:\n(?!(?:\d+\.|\*\*|$))[^\n]+)*)/g, (match) => {
+          // Split by line breaks and number patterns
+          const lines = match.split(/(?=\d+\.\s+)/);
+          return lines.map(line => {
+            const trimmed = line.trim();
+            if (trimmed && /^\d+\.\s+/.test(trimmed)) {
+              return `<p style="margin: 8px 0;">${trimmed}</p>`;
+            }
+            return trimmed ? `<p style="margin: 8px 0;">${trimmed}</p>` : '';
+          }).join('');
+        });
+        
+        // Convert markdown-style bold (**text**) to <strong>
+        formattedMessage = formattedMessage.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        
+        // Detect section headers (lines ending with ":" followed by content)
+        formattedMessage = formattedMessage.replace(/^([^:\n]+:)(?=\s*\n)/gm, '<strong>$1</strong>');
+        
+        // Wrap in div with left alignment
+        messageElement.innerHTML = `<div style="text-align: left; width: 100%;">${formattedMessage}</div>`;
+      } else {
+        // User messages stay as plain text
+        messageElement.textContent = message;
+      }
+      
       this.container.appendChild(messageElement);
       
       if (this.container) {

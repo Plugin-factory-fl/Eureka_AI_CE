@@ -125,6 +125,32 @@
         }
       }
       
+      // Hide "Get Unlimited Usage" buttons in info dialogs for premium users
+      const upgradeButtonIds = [
+        'summary-info-upgrade',
+        'flashcard-info-upgrade',
+        'quiz-info-upgrade',
+        'notes-info-upgrade'
+      ];
+      
+      upgradeButtonIds.forEach(buttonId => {
+        const upgradeButton = document.getElementById(buttonId);
+        if (upgradeButton) {
+          const buttonContainer = upgradeButton.closest('.section-info-cta');
+          if (isPremium) {
+            upgradeButton.style.display = 'none';
+            if (buttonContainer) {
+              buttonContainer.style.display = 'none';
+            }
+          } else {
+            upgradeButton.style.display = '';
+            if (buttonContainer) {
+              buttonContainer.style.display = '';
+            }
+          }
+        }
+      });
+      
       return isPremium;
     }
 

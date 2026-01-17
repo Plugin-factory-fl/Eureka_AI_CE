@@ -31,7 +31,10 @@
 
 .flashcard-content {
   transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
-  overflow: hidden;
+  overflow: visible;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
 }
 
 .flashcard-content.collapsed {
@@ -41,6 +44,7 @@
   margin: 0;
   overflow: hidden;
   border: none;
+  min-height: 0;
 }
 
 .flashcard-list {

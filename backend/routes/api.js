@@ -486,8 +486,9 @@ router.post('/chat', async (req, res) => {
     }
 
     // Check if vision model is needed (image present)
+    // Check imageData first (preferred), then fall back to image or images array
     const hasImage = useVisionModel && (imageData || image || (Array.isArray(images) && images.length > 0));
-    const imageToUse = imageData || image || (Array.isArray(images) && images[0]);
+    const imageToUse = imageData || image || (Array.isArray(images) && images.length > 0 ? images[0] : null);
     
     console.log(`[API Chat] Vision request: useVisionModel=${useVisionModel}, hasImage=${hasImage}, imageDataLength=${imageToUse?.length || 0}`);
 

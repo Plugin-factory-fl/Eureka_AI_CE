@@ -505,10 +505,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.useVisionModel) {
           requestBody.useVisionModel = true;
           if (message.imageData) {
-            // Send image data as base64 string to backend
+            // Send image data as base64 data URL to backend
             requestBody.imageData = message.imageData;
+            console.log('[Eureka AI] Including imageData in request, length:', message.imageData.length, 'bytes');
+            console.log('[Eureka AI] imageData format:', message.imageData.substring(0, 30) + '...');
+          } else {
+            console.warn('[Eureka AI] useVisionModel is true but no imageData provided');
           }
         }
+        
+        console.log('[Eureka AI] Request body keys:', Object.keys(requestBody));
+        console.log('[Eureka AI] Request body size:', JSON.stringify(requestBody).length, 'bytes');
 
         // Add context if provided (truncate to avoid token limits)
         if (message.context) {

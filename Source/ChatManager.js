@@ -645,14 +645,16 @@
         if (screenshotToSend) {
           // Screenshot is already a base64 data URL - compress it
           imageDataToSend = await this.compressImage(screenshotToSend);
-          console.log('[Eureka AI] Compressed screenshot, size:', imageDataToSend?.length || 0, 'bytes');
+          console.log('[Eureka AI] Compressed screenshot, data URL size:', imageDataToSend?.length || 0, 'bytes');
+          console.log('[Eureka AI] Screenshot data URL prefix:', imageDataToSend?.substring(0, 50) || 'none');
         } else if (fileContext && fileContext.imageData) {
           // Uploaded file image data - compress it
           imageDataToSend = await this.compressImage(fileContext.imageData);
-          console.log('[Eureka AI] Compressed file image, size:', imageDataToSend?.length || 0, 'bytes');
+          console.log('[Eureka AI] Compressed file image, data URL size:', imageDataToSend?.length || 0, 'bytes');
+          console.log('[Eureka AI] File image data URL prefix:', imageDataToSend?.substring(0, 50) || 'none');
         }
         
-        console.log('[Eureka AI] Sending sidechat message with useVisionModel:', !!hasImageOrFile, 'hasImageData:', !!imageDataToSend);
+        console.log('[Eureka AI] Sending sidechat message with useVisionModel:', !!hasImageOrFile, 'hasImageData:', !!imageDataToSend, 'imageDataLength:', imageDataToSend?.length || 0);
         
         const response = await chrome.runtime.sendMessage({
           action: 'sidechat',
@@ -660,7 +662,7 @@
           chatHistory: chatHistory,
           context: combinedContext,
           useVisionModel: !!hasImageOrFile, // Request vision model if image/file is present
-          imageData: imageDataToSend // Send compressed image data (base64 data URL)
+          imageData: imageDataToSend // Send compressed image data (full data URL format)
         });
 
         if (response?.error) {

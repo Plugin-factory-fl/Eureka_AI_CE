@@ -206,6 +206,15 @@ function detectContentType() {
 
 function extractWebpageText() {
   try {
+    const url = window.location.href;
+    console.log('[Eureka AI] Extracting content from:', url);
+    
+    // Wait a bit for dynamic content to load (SPAs)
+    // Check if document is still loading
+    if (document.readyState !== 'complete') {
+      console.log('[Eureka AI] Document not fully loaded, waiting...');
+    }
+    
     // Create a clone of the document body to avoid modifying the actual DOM
     const bodyClone = document.body.cloneNode(true);
     
@@ -219,15 +228,58 @@ function extractWebpageText() {
     const main = bodyClone.querySelector('main');
     const contentArea = bodyClone.querySelector('[role="main"], .content, .post-content, .entry-content, #content, #main-content, .main-content');
     
+    // Try additional selectors for common content containers
+    const additionalSelectors = [
+      '[class*="content"]',
+      '[class*="article"]',
+      '[class*="post"]',
+      '[class*="entry"]',
+      '[id*="content"]',
+      '[id*="main"]',
+      '.page-content',
+      '.article-content',
+      '.post-body',
+      '.entry-body'
+    ];
+    
+    let foundContent = false;
+    
     if (article) {
       content = article.innerText || article.textContent || '';
+      console.log('[Eureka AI] Found content in <article> tag, length:', content.length);
+      foundContent = true;
     } else if (main) {
       content = main.innerText || main.textContent || '';
+      console.log('[Eureka AI] Found content in <main> tag, length:', content.length);
+      foundContent = true;
     } else if (contentArea) {
       content = contentArea.innerText || contentArea.textContent || '';
+      console.log('[Eureka AI] Found content in content area, length:', content.length);
+      foundContent = true;
     } else {
-      // Fallback: use the entire body clone (already cleaned)
-      content = bodyClone.innerText || bodyClone.textContent || '';
+      // Try additional selectors
+      for (const selector of additionalSelectors) {
+        const element = bodyClone.querySelector(selector);
+        if (element) {
+          const candidateContent = element.innerText || element.textContent || '';
+          // Only use if it has substantial content (more than 100 chars)
+          if (candidateContent.trim().length > 100) {
+            content = candidateContent;
+            console.log(`[Eureka AI] Found content using selector "${selector}", length:`, content.length);
+            foundContent = true;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Fallback: use the entire body clone (already cleaned) if no specific content found
+    if (!foundContent || content.trim().length < 50) {
+      const fallbackContent = bodyClone.innerText || bodyClone.textContent || '';
+      if (fallbackContent.trim().length > content.trim().length) {
+        content = fallbackContent;
+        console.log('[Eureka AI] Using fallback (entire body), length:', content.length);
+      }
     }
     
     // Clean up text
@@ -237,11 +289,22 @@ function extractWebpageText() {
       .trim();
     
     // Log extraction for debugging
-    console.log('[Eureka AI] Extracted webpage text length:', content.length);
+    console.log('[Eureka AI] Final extracted webpage text length:', content.length);
+    
+    if (content.length < 50) {
+      console.warn('[Eureka AI] Warning: Extracted content is very short. The page might use iframes, shadow DOM, or dynamic loading.');
+      console.log('[Eureka AI] Page structure:', {
+        hasArticle: !!document.querySelector('article'),
+        hasMain: !!document.querySelector('main'),
+        bodyTextLength: (document.body.innerText || '').length,
+        url: url
+      });
+    }
     
     return content;
   } catch (error) {
     console.error('[Eureka AI] Error extracting webpage text:', error);
+    console.error('[Eureka AI] Error stack:', error.stack);
     return '';
   }
 }
@@ -564,8 +627,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             contentData.pdfUrl = getPDFUrl();
           }
         } else if (contentType.type === 'webpage') {
-          const webpageText = extractWebpageText();
+          // Try extracting immediately, then retry after a delay for dynamic content
+          let webpageText = extractWebpageText();
           const metadata = getWebpageMetadata();
+          
+          // If content is very short, wait and retry (for SPAs that load content dynamically)
+          if (webpageText.length < 100) {
+            console.log('[Eureka AI] Content is short, waiting 2 seconds for dynamic content to load...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const retryText = extractWebpageText();
+            if (retryText.length > webpageText.length) {
+              webpageText = retryText;
+              console.log('[Eureka AI] Retry extracted more content, new length:', webpageText.length);
+            }
+          }
+          
           contentData = { ...contentData, text: webpageText, ...metadata };
         }
         

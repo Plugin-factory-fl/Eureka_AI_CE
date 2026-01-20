@@ -467,9 +467,9 @@ function registerAccountHandlers() {
       await clearAuthToken();
       await updateLoggedInView();
       await updateStatusCard();
-      // Update usage cards if window.UsageTracker exists
+      // Update usage cards if window.UsageTracker exists (force refresh after logout)
       if (window.updateStatusCards) {
-        await window.updateStatusCards();
+        await window.updateStatusCards(true);
       }
     });
   }
@@ -632,6 +632,9 @@ function registerAccountHandlers() {
       const result = await loginUser(email, password);
       await storeAuthToken(result.token);
       
+      // Clear cached usage data on login to ensure fresh data
+      await chrome.storage.local.remove(['cachedUsage', 'cachedEnhancementsUsed', 'cachedEnhancementsLimit']);
+      
       if (errorEl) {
         errorEl.hidden = true;
       }
@@ -639,9 +642,9 @@ function registerAccountHandlers() {
       accountDialog.close();
       await updateLoggedInView();
       await updateStatusCard();
-      // Update usage cards
-      if (window.updateStatusCards) {
-        await window.updateStatusCards();
+      // Update usage cards with fresh data (force refresh after login)
+      if (window.usageManager && window.usageManager.updateStatusCards) {
+        await window.usageManager.updateStatusCards(true);
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -712,6 +715,9 @@ function registerAccountHandlers() {
         const result = await registerUser(name, email, password);
         await storeAuthToken(result.token);
         
+        // Clear cached usage data on registration to ensure fresh data
+        await chrome.storage.local.remove(['cachedUsage', 'cachedEnhancementsUsed', 'cachedEnhancementsLimit']);
+        
         if (errorEl) {
           errorEl.hidden = true;
         }
@@ -720,9 +726,9 @@ function registerAccountHandlers() {
         accountDialog.close();
         await updateLoggedInView();
         await updateStatusCard();
-        // Update usage cards
-        if (window.updateStatusCards) {
-          await window.updateStatusCards();
+        // Update usage cards with fresh data
+        if (window.usageManager && window.usageManager.updateStatusCards) {
+          await window.usageManager.updateStatusCards();
         }
       } catch (error) {
         console.error('Registration error:', error);

@@ -385,6 +385,11 @@
             window.showCompletionBadge(this.summaryContainer);
           }
           
+          // Refresh usage counter after enhancement is used (force refresh for accurate count)
+          if (window.usageManager && window.usageManager.updateStatusCards) {
+            await window.usageManager.updateStatusCards(true);
+          }
+          
           const summarizeButton = document.getElementById('summarize-button');
           const regenerateSummaryButton = document.getElementById('regenerate-summary-button');
           if (summarizeButton) summarizeButton.style.display = 'none';

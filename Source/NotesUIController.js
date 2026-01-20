@@ -139,6 +139,7 @@
               </div>
               <div class="note-item__content">${note.content.substring(0, 100)}${note.content.length > 100 ? '...' : ''}</div>
               <div class="note-item__actions">
+                <button class="note-item__copy" data-note-id="${note.id}">Copy</button>
                 <button class="note-item__edit" data-note-id="${note.id}">Edit</button>
                 <button class="note-item__delete" data-note-id="${note.id}">Delete</button>
               </div>
@@ -146,7 +147,45 @@
           `;
         }).join('');
         
-        // Add event listeners for edit and delete
+        // Add click handler to note items to show preview (but not on action buttons)
+        this.notesList.querySelectorAll('.note-item').forEach(item => {
+          item.addEventListener('click', (e) => {
+            // Don't trigger preview if clicking on action buttons
+            if (e.target.closest('.note-item__actions')) {
+              return;
+            }
+            
+            const noteId = item.dataset.noteId;
+            const note = notesToShow.find(n => n.id === noteId);
+            if (note) {
+              this.showNotePreview(note);
+            }
+          });
+        });
+        
+        // Add event listeners for copy, edit and delete
+        this.notesList.querySelectorAll('.note-item__copy').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const noteId = e.target.dataset.noteId;
+            const note = notesToShow.find(n => n.id === noteId);
+            if (note) {
+              try {
+                await navigator.clipboard.writeText(note.content);
+                const originalText = e.target.textContent;
+                e.target.textContent = 'Copied!';
+                e.target.style.color = '#10b981';
+                setTimeout(() => {
+                  e.target.textContent = originalText;
+                  e.target.style.color = '';
+                }, 1500);
+              } catch (error) {
+                console.error('[Eureka AI] Error copying note:', error);
+                alert('Failed to copy note. Please try again.');
+              }
+            }
+          });
+        });
+        
         this.notesList.querySelectorAll('.note-item__edit').forEach(btn => {
           btn.addEventListener('click', async (e) => {
             const noteId = e.target.dataset.noteId;
@@ -172,6 +211,40 @@
           });
         });
       }
+    }
+
+    showNotePreview(note) {
+      const dialog = document.getElementById('note-preview-dialog');
+      const titleEl = document.getElementById('note-preview-title');
+      const contentEl = document.getElementById('note-preview-content');
+      const closeBtn = document.getElementById('note-preview-close');
+      
+      if (!dialog || !titleEl || !contentEl) return;
+      
+      // Set title and content
+      titleEl.textContent = note.title || 'Untitled Note';
+      contentEl.textContent = note.content || '';
+      
+      // Handle close button
+      if (closeBtn) {
+        const closeHandler = () => {
+          dialog.close();
+          closeBtn.removeEventListener('click', closeHandler);
+        };
+        closeBtn.addEventListener('click', closeHandler);
+      }
+      
+      // Close on backdrop click
+      const backdropHandler = (e) => {
+        if (e.target === dialog) {
+          dialog.close();
+          dialog.removeEventListener('click', backdropHandler);
+        }
+      };
+      dialog.addEventListener('click', backdropHandler);
+      
+      // Show dialog
+      dialog.showModal();
     }
   }
 

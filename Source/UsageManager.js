@@ -13,6 +13,19 @@
       this.getProTextIndex = 0;
       this.getProInterval = null;
       
+      // Cache for API responses to reduce calls
+      this.cache = {
+        usage: null,
+        profile: null,
+        cacheTime: 0,
+        cacheTTL: 30000 // 30 seconds cache
+      };
+      
+      // Throttle updateStatusCards to prevent too many calls
+      this.updatePending = false;
+      this.lastUpdateTime = 0;
+      this.updateThrottle = 2000; // Minimum 2 seconds between updates
+      
       this.init();
     }
 
@@ -35,41 +48,64 @@
     }
 
     updateUsesCounter(usage, subscriptionStatus) {
-      try {
-        const usesCounter = document.getElementById('uses-counter');
-        const usesRemainingText = document.getElementById('uses-remaining-text');
-        const proSection = document.querySelector('.pro-section');
-        
-        if (!usesCounter || !usesRemainingText) return;
+      // Old footer section removed - functionality moved to header usage card
+      // This method kept for backward compatibility but does nothing
+      // All usage display is now handled by updateHeaderUsageCard()
+    }
 
+    updateHeaderUsageCard(usage, subscriptionStatus) {
+      try {
+        const headerCard = document.getElementById('header-usage-card');
+        const usesRemaining = document.getElementById('header-uses-remaining');
+        const upgradeBtn = document.getElementById('header-upgrade-btn');
+        
+        if (!headerCard || !usesRemaining) return;
+
+        // Hide for premium users
         if (subscriptionStatus === 'premium') {
-          usesCounter.style.display = 'none';
-          // Hide entire pro-section footer for premium users - use !important to override CSS
-          if (proSection) {
-            proSection.style.setProperty('display', 'none', 'important');
-          }
+          headerCard.style.display = 'none';
           return;
         }
-        
-        // Show pro-section for freemium users
-        if (proSection) {
-          proSection.style.removeProperty('display');
-        }
 
+        // Show for freemium users
         if (!usage) {
-          usesCounter.style.display = 'none';
+          headerCard.style.display = 'none';
           return;
         }
 
         const remaining = Math.max(0, (usage.enhancementsLimit || 0) - (usage.enhancementsUsed || 0));
-        usesRemainingText.textContent = `${remaining} uses remaining`;
-        usesCounter.style.display = 'block';
+        usesRemaining.textContent = `${remaining} uses remaining`;
+        headerCard.style.display = 'flex';
+
+        // Wire up upgrade button
+        if (upgradeBtn && !upgradeBtn.hasAttribute('data-handler-attached')) {
+          upgradeBtn.setAttribute('data-handler-attached', 'true');
+          upgradeBtn.addEventListener('click', async () => {
+            if (window.infoDialogsManager && window.infoDialogsManager.handleUpgrade) {
+              await window.infoDialogsManager.handleUpgrade();
+            }
+          });
+        }
       } catch (e) {
-        console.warn('[Eureka AI] Failed to update uses counter:', e);
+        console.warn('[Eureka AI] Failed to update header usage card:', e);
       }
     }
 
-    async updateStatusCards() {
+    async updateStatusCards(forceRefresh = false) {
+      // Throttle updates to prevent too many API calls
+      const now = Date.now();
+      if (!forceRefresh && this.updatePending) {
+        return; // Already updating
+      }
+      if (!forceRefresh && (now - this.lastUpdateTime) < this.updateThrottle) {
+        // Schedule update after throttle period
+        setTimeout(() => this.updateStatusCards(forceRefresh), this.updateThrottle - (now - this.lastUpdateTime));
+        return;
+      }
+      
+      this.updatePending = true;
+      this.lastUpdateTime = now;
+      
       const enhancementsCountEl = document.getElementById('account-enhancements-count');
       const enhancementsLimitEl = document.getElementById('account-enhancements-limit');
       const userStatusEl = document.getElementById('account-user-status');
@@ -78,13 +114,27 @@
       try {
         const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
         let usage = null;
+        let subscriptionStatus = 'freemium';
         
-        try {
-          const stored = await chrome.storage.local.get(['sumvid_auth_token']);
-          const token = stored.sumvid_auth_token;
+        const stored = await chrome.storage.local.get(['sumvid_auth_token']);
+        const token = stored.sumvid_auth_token;
+        
+        // Use cache if available and not forcing refresh
+        const cacheAge = now - this.cache.cacheTime;
+        if (!forceRefresh && this.cache.usage && this.cache.profile && cacheAge < this.cache.cacheTTL) {
+          usage = this.cache.usage;
+          subscriptionStatus = this.cache.profile.subscription_status || 'freemium';
           
-          if (token) {
-            const response = await fetch(`${BACKEND_URL}/api/user/usage`, {
+          if (userStatusEl) {
+            userStatusEl.textContent = this.cache.profile.displayName || 'User';
+          }
+          if (userPlanEl) {
+            userPlanEl.textContent = subscriptionStatus === 'premium' ? 'PRO' : 'Freemium';
+          }
+        } else if (token) {
+          try {
+            // Fetch usage data
+            const usageResponse = await fetch(`${BACKEND_URL}/api/user/usage`, {
               method: 'GET',
               headers: {
                 'Authorization': `Bearer ${token}`,
@@ -92,29 +142,79 @@
               },
             });
             
-            if (response.ok) {
-              const data = await response.json();
+            if (usageResponse.ok) {
+              const data = await usageResponse.json();
               usage = {
                 enhancementsUsed: data.enhancementsUsed || 0,
                 enhancementsLimit: data.enhancementsLimit || 10
               };
+              subscriptionStatus = data.subscriptionStatus || 'freemium';
+              this.cache.usage = usage;
+            } else if (usageResponse.status === 429) {
+              console.warn('[Eureka AI] Rate limited on usage API, using cache');
+              if (this.cache.usage) {
+                usage = this.cache.usage;
+              }
+            }
+            
+            // Fetch profile to get subscription status and user info
+            const profileResponse = await fetch(`${BACKEND_URL}/api/user/profile`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            
+            if (profileResponse.ok) {
+              const profileData = await profileResponse.json();
+              const userProfile = profileData.user || profileData;
+              subscriptionStatus = userProfile.subscription_status || subscriptionStatus;
+              
+              // Update user status and plan
+              const displayName = (userProfile.name && userProfile.name.trim()) 
+                ? userProfile.name 
+                : (userProfile.email || 'User');
+              
+              this.cache.profile = {
+                subscription_status: subscriptionStatus,
+                displayName: displayName
+              };
+              
+              if (userStatusEl) {
+                userStatusEl.textContent = displayName;
+              }
+              if (userPlanEl) {
+                userPlanEl.textContent = subscriptionStatus === 'premium' ? 'PRO' : 'Freemium';
+              }
+            } else if (profileResponse.status === 429) {
+              console.warn('[Eureka AI] Rate limited on profile API, using cache');
+              if (this.cache.profile) {
+                subscriptionStatus = this.cache.profile.subscription_status || 'freemium';
+                if (userStatusEl) {
+                  userStatusEl.textContent = this.cache.profile.displayName || 'User';
+                }
+                if (userPlanEl) {
+                  userPlanEl.textContent = subscriptionStatus === 'premium' ? 'PRO' : 'Freemium';
+                }
+              }
+            }
+            
+            // Update cache timestamp
+            this.cache.cacheTime = now;
+          } catch (error) {
+            console.warn('[Eureka AI] Failed to get usage from backend:', error);
+            // Use cache if available
+            if (this.cache.usage) {
+              usage = this.cache.usage;
+            }
+            if (this.cache.profile) {
+              subscriptionStatus = this.cache.profile.subscription_status || 'freemium';
             }
           }
-        } catch (error) {
-          console.warn('[Eureka AI] Failed to get usage from backend:', error);
         }
         
-        // Fallback to local storage
-        if (!usage && window.UsageTracker) {
-          await window.UsageTracker.resetDailyUsageIfNeeded();
-          const localUsage = await window.UsageTracker.getUsage();
-          usage = {
-            enhancementsUsed: localUsage.enhancementsUsed,
-            enhancementsLimit: localUsage.enhancementsLimit
-          };
-        }
-        
-        // Default values
+        // If no token or fetch failed, use defaults
         if (!usage) {
           usage = {
             enhancementsUsed: 0,
@@ -125,40 +225,8 @@
         if (enhancementsCountEl) enhancementsCountEl.textContent = usage.enhancementsUsed;
         if (enhancementsLimitEl) enhancementsLimitEl.textContent = usage.enhancementsLimit;
         
-        // Update user status and plan
-        const storedToken = await chrome.storage.local.get(['sumvid_auth_token']);
-        const authToken = storedToken.sumvid_auth_token;
-        let subscriptionStatus = 'freemium';
-        
-        if (authToken) {
-          try {
-            const profileResponse = await fetch(`${BACKEND_URL}/api/user/profile`, {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${authToken}`,
-                'Content-Type': 'application/json',
-              },
-            });
-            
-            if (profileResponse.ok) {
-              const profileData = await profileResponse.json();
-              const userProfile = profileData.user || profileData;
-              const displayName = (userProfile.name && userProfile.name.trim()) 
-                ? userProfile.name 
-                : (userProfile.email || 'User');
-              subscriptionStatus = userProfile.subscription_status || 'freemium';
-              
-              if (userStatusEl) {
-                userStatusEl.textContent = displayName;
-              }
-              if (userPlanEl) {
-                userPlanEl.textContent = subscriptionStatus === 'premium' ? 'PRO' : 'Freemium';
-              }
-            }
-          } catch (error) {
-            console.warn('[Eureka AI] Failed to get user profile:', error);
-          }
-        } else {
+        // Update user status and plan (profile already fetched above if token exists)
+        if (!token) {
           if (userStatusEl) {
             userStatusEl.textContent = 'Not Logged In';
           }
@@ -167,8 +235,11 @@
           }
         }
         
-        // Update uses counter
+        // Update uses counter (hides old footer)
         this.updateUsesCounter(usage, subscriptionStatus);
+        
+        // Update header usage card (shows in header for freemium)
+        this.updateHeaderUsageCard(usage, subscriptionStatus);
         
         // Update UI for premium users
         if (window.premiumManager) {
@@ -183,6 +254,8 @@
         const enhancementsLimitEl = document.getElementById('account-enhancements-limit');
         if (enhancementsCountEl) enhancementsCountEl.textContent = '0';
         if (enhancementsLimitEl) enhancementsLimitEl.textContent = '10';
+      } finally {
+        this.updatePending = false;
       }
     }
 

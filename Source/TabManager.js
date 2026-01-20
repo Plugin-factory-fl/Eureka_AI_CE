@@ -29,7 +29,6 @@
     }
 
     async switchTab(tabName) {
-      console.log('[TabManager] Switching to tab:', tabName);
       this.activeTab = tabName;
       
       // Update tab buttons
@@ -77,7 +76,6 @@
         
         // Verify dimensions after forced visibility
         const videoInfoRect = videoInfo.getBoundingClientRect();
-        console.log('[TabManager] video-info rect:', videoInfoRect.width, 'x', videoInfoRect.height);
         if (videoInfoRect.width === 0 || videoInfoRect.height === 0) {
           console.error('[TabManager] ERROR: video-info parent has zero dimensions!');
           // Last resort: force explicit dimensions
@@ -98,7 +96,6 @@
       
       // Show only the active tab
       const activeTabContent = document.getElementById(`tab-${tabName}`);
-      console.log('[TabManager] Active tab content element:', activeTabContent);
       if (activeTabContent) {
         // Add active class FIRST - CSS .tab-content.active { display: flex !important; } will handle showing
         activeTabContent.classList.add('active');
@@ -130,20 +127,9 @@
         
         // Verify only one tab is active
         const activeTabs = this.tabContents.filter(tab => tab.classList.contains('active'));
-        console.log('[TabManager] Active tabs count:', activeTabs.length, activeTabs.map(t => t.id));
         if (activeTabs.length > 1) {
           console.error('[TabManager] ERROR: Multiple tabs have active class!', activeTabs.map(t => t.id));
         }
-        
-        console.log('[TabManager] Active class added, CSS .tab-content.active should handle display');
-        
-        // DEBUG: Check computed styles of tab-content itself
-        const computedTabContent = window.getComputedStyle(activeTabContent);
-        console.log('[TabManager] DEBUG - Tab content: display=' + computedTabContent.display + 
-          ', visibility=' + computedTabContent.visibility + 
-          ', opacity=' + computedTabContent.opacity + 
-          ', height=' + computedTabContent.height + 
-          ', width=' + computedTabContent.width);
         
         // CRITICAL: Force explicit dimensions on tab-content to prevent collapsing
         // For flashcards/quiz/notes, ensure tab-content has proper height AND width
@@ -174,8 +160,6 @@
           activeTabContent.style.setProperty('visibility', 'visible', 'important');
           activeTabContent.style.setProperty('opacity', '1', 'important');
           
-          console.log('[TabManager] Set tab-content dimensions to:', targetWidth + 'x' + targetHeight, 'px');
-          
           // Use double requestAnimationFrame to ensure layout recalculation
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -187,18 +171,11 @@
                 const parentRect = activeTabContent.parentElement?.getBoundingClientRect();
                 const videoInfoRect = videoInfo?.getBoundingClientRect();
                 
-                console.log('[TabManager] Tab content computed height:', computedStyle.height);
-                console.log('[TabManager] Tab content computed width:', computedStyle.width);
-                console.log('[TabManager] Tab content rect after height fix:', tabRect.width, 'x', tabRect.height);
-                console.log('[TabManager] Parent rect:', parentRect?.width, 'x', parentRect?.height);
-                console.log('[TabManager] video-info rect:', videoInfoRect?.width, 'x', videoInfoRect?.height);
-                
                 if (tabRect.height < 100 || tabRect.width === 0) {
                   console.error('[TabManager] ERROR: Tab content still collapsed after height fix!');
                   
                   // Parent is collapsed - force it to have dimensions
                   if (parentRect && (parentRect.width === 0 || parentRect.height === 0)) {
-                    console.log('[TabManager] Parent is collapsed, forcing dimensions from video-info');
                     const parentEl = activeTabContent.parentElement;
                     if (parentEl && parentEl !== videoInfo) {
                       const videoInfoRect = videoInfo?.getBoundingClientRect();
@@ -213,7 +190,6 @@
                   
                   // Force width on tab-content itself from video-info
                   if (tabRect.width === 0 && videoInfoRect && videoInfoRect.width > 0) {
-                    console.log('[TabManager] Forcing width from video-info:', videoInfoRect.width);
                     activeTabContent.style.setProperty('width', videoInfoRect.width + 'px', 'important');
                     activeTabContent.style.setProperty('min-width', '100%', 'important');
                   }
@@ -239,8 +215,6 @@
           const emptyId = tabName === 'notes' ? 'note-empty' : `${tabName === 'flashcards' ? 'flashcard' : 'quiz'}-empty`;
           const empty = activeTabContent.querySelector(`#${emptyId}`);
           
-          console.log('[TabManager] Elements found:', { container: !!container, content: !!content, empty: !!empty });
-          
           // Set up containers - remove conflicting inline styles, let CSS handle display/flex
           if (container) {
             container.style.removeProperty('display');
@@ -248,8 +222,6 @@
             container.style.removeProperty('opacity');
             container.style.removeProperty('height');
             container.classList.remove('collapsed', 'hidden');
-            // CSS already has min-height: 200px, let it work
-            console.log('[TabManager] Container cleaned up');
           }
           if (content) {
             content.style.removeProperty('display');
@@ -258,7 +230,6 @@
             content.style.removeProperty('max-height');
             content.style.removeProperty('height');
             content.classList.remove('collapsed', 'hidden');
-            console.log('[TabManager] Content cleaned up');
           }
           if (empty) {
             empty.style.removeProperty('display');
@@ -266,8 +237,6 @@
             empty.style.removeProperty('opacity');
             empty.style.removeProperty('height');
             empty.classList.remove('hidden');
-            // CSS should handle padding and dimensions
-            console.log('[TabManager] Empty state cleaned up');
           }
           
           // Force a reflow so containers are laid out
@@ -288,19 +257,13 @@
       
       // Regenerate suggestions when switching to chat tab
       if (tabName === 'chat' && window.chatManager) {
-        console.log('[TabManager] Regenerating chat suggestions');
         window.chatManager.generateSuggestions();
       }
       
       // Render content BEFORE showing tab to prevent flash
-      // For flashcards, quiz, and notes tabs, render immediately before showing
       if (tabName === 'flashcards') {
-        console.log('[TabManager] Rendering flashcards, controller exists:', !!window.flashcardUIController);
-        
-        // Ensure button handlers are set up
         const generateButton = document.getElementById('generate-flashcard-button');
         if (generateButton && window.flashcardUIController && !generateButton.hasAttribute('data-handler-attached')) {
-          console.log('[TabManager] Setting up flashcard button handler');
           generateButton.setAttribute('data-handler-attached', 'true');
           generateButton.addEventListener('click', async () => {
             if (window.flashcardUIController) {
@@ -345,13 +308,9 @@
       }
       
       if (tabName === 'quiz') {
-        console.log('[TabManager] Rendering quiz, controller exists:', !!window.quizUIController);
-        
-        // Ensure button handlers are set up
         const makeTestButton = document.getElementById('make-test-button');
         const regenerateQuizButton = document.getElementById('regenerate-quiz-button');
         if (makeTestButton && window.quizUIController && !makeTestButton.hasAttribute('data-handler-attached')) {
-          console.log('[TabManager] Setting up quiz button handler');
           makeTestButton.setAttribute('data-handler-attached', 'true');
           makeTestButton.addEventListener('click', async () => {
             if (window.quizUIController) {
@@ -404,12 +363,8 @@
       }
       
       if (tabName === 'notes') {
-        console.log('[TabManager] Rendering notes, controller exists:', !!window.notesUIController);
-        
-        // Ensure button handlers are set up
         const createNoteButton = document.getElementById('create-note-button');
         if (createNoteButton && window.notesUIController && !createNoteButton.hasAttribute('data-handler-attached')) {
-          console.log('[TabManager] Setting up notes button handler');
           createNoteButton.setAttribute('data-handler-attached', 'true');
           createNoteButton.addEventListener('click', () => {
             const noteEditorDialog = document.getElementById('note-editor-dialog');
@@ -436,7 +391,6 @@
         const noteEditorForm = document.getElementById('note-editor-form');
         
         if (noteEditorDialog && !noteEditorDialog.hasAttribute('data-handlers-attached')) {
-          console.log('[TabManager] Setting up note editor dialog handlers');
           noteEditorDialog.setAttribute('data-handlers-attached', 'true');
           
           // Function to close dialog - removes required attributes temporarily
@@ -560,7 +514,6 @@
           activeTabContent.appendChild(overlay);
           
           const folder = notesFilter ? notesFilter.value : 'all';
-          console.log('[TabManager] Rendering notes for folder:', folder);
           // Set tab to opacity 0 temporarily while rendering
           activeTabContent.style.setProperty('opacity', '0', 'important');
           await window.notesUIController.renderNotes(folder).catch(err => {

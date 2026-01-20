@@ -150,7 +150,7 @@
           }
           
           if (window.usageManager) {
-            await window.usageManager.updateStatusCards();
+            await window.usageManager.updateStatusCards(true); // Force refresh after quiz
           }
         } else {
           console.error('[QuizUIController] Invalid quiz response format:', response);
@@ -386,18 +386,28 @@
           }
         }
         
+        // Collect all answer options with their text
+        const allAnswerOptions = [];
+        allOptions.forEach(option => {
+          const optionText = option.textContent.trim() || option.querySelector('span')?.textContent.trim() || option.value;
+          if (optionText) {
+            allAnswerOptions.push(optionText);
+          }
+        });
+        
         // Determine if answer was correct
         const isCorrect = selectedAnswer && selectedAnswer.value === correctAnswer;
         if (isCorrect) {
           correctAnswers++;
         }
         
-        // Store report data
+        // Store report data with all options
         this.quizReportData.push({
           questionNumber: index + 1,
           questionText: questionText,
           userAnswer: userAnswerText,
           correctAnswer: correctAnswer || 'Unknown',
+          allOptions: allAnswerOptions,
           isCorrect: isCorrect
         });
         
@@ -473,6 +483,13 @@
         
         this.quizReportData.forEach((item, index) => {
           reportText += `Question ${item.questionNumber}: ${item.questionText}\n`;
+          if (item.allOptions && item.allOptions.length > 0) {
+            reportText += `Answer Options:\n`;
+            item.allOptions.forEach((option, optIndex) => {
+              const marker = option === item.correctAnswer ? '✓' : (option === item.userAnswer ? '→' : ' ');
+              reportText += `  ${marker} ${option}\n`;
+            });
+          }
           reportText += `Your Answer: ${item.userAnswer}\n`;
           reportText += `Correct Answer: ${item.correctAnswer}\n`;
           reportText += `Result: ${item.isCorrect ? 'Correct' : 'Incorrect'}\n`;
@@ -552,7 +569,9 @@
         copyButton.textContent = 'Copy';
         copyButton.style.cssText = 'display: inline-block;';
         
-        copyButton.addEventListener('click', async () => {
+        copyButton.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
           try {
             if (!reportEl || !reportEl.textContent) {
               alert('No report available to copy.');
@@ -561,15 +580,17 @@
             
             await navigator.clipboard.writeText(reportEl.textContent);
             
-            // Show confirmation
-            const originalText = copyButton.textContent;
-            copyButton.textContent = 'Copied!';
-            copyButton.disabled = true;
-            
-            setTimeout(() => {
-              copyButton.textContent = originalText;
-              copyButton.disabled = false;
-            }, 2000);
+            // Show feedback in separate element (don't close dialog)
+            const feedbackEl = document.getElementById('quiz-copy-feedback');
+            if (feedbackEl) {
+              feedbackEl.textContent = 'Copied to clipboard!';
+              feedbackEl.style.display = 'inline-block';
+              feedbackEl.style.color = '#10b981';
+              setTimeout(() => {
+                feedbackEl.textContent = '';
+                feedbackEl.style.display = 'none';
+              }, 2000);
+            }
           } catch (error) {
             console.error('[Eureka AI] Error copying quiz report:', error);
             alert('Failed to copy quiz report. Please try again.');

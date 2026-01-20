@@ -41,59 +41,8 @@
       this.init();
     }
 
-    /**
-     * Compress image to reduce file size before sending to backend
-     * @param {string} imageData - Base64 data URL
-     * @param {number} maxWidth - Maximum width in pixels (default: 800)
-     * @param {number} maxHeight - Maximum height in pixels (default: 800)
-     * @param {number} quality - JPEG quality 0-1 (default: 0.7)
-     * @returns {Promise<string>} Compressed base64 data URL
-     */
-    async compressImage(imageData, maxWidth = 800, maxHeight = 800, quality = 0.7) {
-      return new Promise((resolve, reject) => {
-        if (!imageData || typeof imageData !== 'string') {
-          resolve(imageData);
-          return;
-        }
-
-        const img = new Image();
-        img.onload = () => {
-          try {
-            // Calculate new dimensions maintaining aspect ratio
-            let width = img.width;
-            let height = img.height;
-
-            if (width > maxWidth || height > maxHeight) {
-              const ratio = Math.min(maxWidth / width, maxHeight / height);
-              width = Math.round(width * ratio);
-              height = Math.round(height * ratio);
-            }
-
-            // Create canvas and draw resized image
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-
-            // Convert to base64 with compression
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-            resolve(compressedDataUrl);
-          } catch (error) {
-            console.error('[Eureka AI] Error compressing image:', error);
-            // Return original if compression fails
-            resolve(imageData);
-          }
-        };
-
-        img.onerror = () => {
-          console.error('[Eureka AI] Error loading image for compression');
-          // Return original if loading fails
-          resolve(imageData);
-        };
-
-        img.src = imageData;
-      });
+    compressImage(imageData, maxWidth = 800, maxHeight = 800, quality = 0.7) {
+      return window.ImageUtils?.compressImage(imageData, maxWidth, maxHeight, quality) || Promise.resolve(imageData);
     }
 
     init() {
@@ -182,10 +131,79 @@
       
       // Generate suggestions on load
       setTimeout(() => this.generateSuggestions(), 100);
+      
+      // Show upload limit toast on sidebar open (for freemium users)
+      setTimeout(() => {
+        this.updateUploadLimitIndicator();
+      }, 500);
+    }
+
+    async updateUploadLimitIndicator() {
+      const toast = document.getElementById('upload-limit-toast');
+      if (!toast) return;
+      
+      // Don't show if already dismissed
+      if (toast.hasAttribute('data-dismissed')) {
+        return;
+      }
+      
+      // Check if user is premium
+      if (window.premiumManager) {
+        const isPremium = await window.premiumManager.checkPremiumStatus();
+        if (isPremium) {
+          toast.style.display = 'none';
+          return;
+        }
+      }
+      
+      // Show toast for freemium users on sidebar open
+      toast.style.display = 'block';
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateY(0)';
+      
+      // Add hover handler to dismiss on hover
+      const hoverHandler = () => {
+        if (toast.hasAttribute('data-dismissed')) return;
+        toast.setAttribute('data-dismissed', 'true');
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(5px)';
+        setTimeout(() => {
+          if (toast) {
+            toast.style.display = 'none';
+            toast.removeEventListener('mouseenter', hoverHandler);
+          }
+        }, 300);
+      };
+      
+      // Remove any existing listener and add new one
+      toast.removeEventListener('mouseenter', hoverHandler);
+      toast.addEventListener('mouseenter', hoverHandler);
+      
+      // Auto-hide after 5 seconds if not hovered
+      setTimeout(() => {
+        if (toast && !toast.hasAttribute('data-dismissed')) {
+          toast.setAttribute('data-dismissed', 'true');
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateY(5px)';
+          setTimeout(() => {
+            if (toast) {
+              toast.style.display = 'none';
+              toast.removeEventListener('mouseenter', hoverHandler);
+            }
+          }, 300);
+        }
+      }, 5000);
     }
 
     addMessage(message, isUser = false) {
       if (!this.container) return;
+      
+      // Create wrapper for assistant messages to position copy button outside
+      const messageWrapper = document.createElement('div');
+      messageWrapper.style.position = 'relative';
+      messageWrapper.style.display = 'inline-block';
+      messageWrapper.style.width = '100%';
+      messageWrapper.style.maxWidth = '80%';
       
       const messageElement = document.createElement('div');
       messageElement.className = `chat-message ${isUser ? 'user' : 'assistant'}`;
@@ -216,12 +234,48 @@
         
         // Wrap in div with left alignment
         messageElement.innerHTML = `<div style="text-align: left; width: 100%;">${formattedMessage}</div>`;
+        
+        // Add copy button for assistant messages (outside the bubble)
+        const copyButton = document.createElement('button');
+        copyButton.className = 'chat-message-copy-btn';
+        copyButton.setAttribute('aria-label', 'Copy message');
+        copyButton.innerHTML = '📋';
+        copyButton.title = 'Copy to clipboard';
+        
+        copyButton.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            // Get plain text version of message (strip HTML)
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = formattedMessage;
+            const plainText = tempDiv.textContent || tempDiv.innerText || message;
+            
+            await navigator.clipboard.writeText(plainText);
+            
+            // Show feedback
+            const originalHTML = copyButton.innerHTML;
+            copyButton.innerHTML = '✓';
+            copyButton.style.color = '#10b981';
+            
+            setTimeout(() => {
+              copyButton.innerHTML = originalHTML;
+              copyButton.style.color = '';
+            }, 1500);
+          } catch (error) {
+            console.error('[Eureka AI] Error copying message:', error);
+            alert('Failed to copy message. Please try again.');
+          }
+        });
+        
+        messageWrapper.appendChild(messageElement);
+        messageWrapper.appendChild(copyButton);
+        this.container.appendChild(messageWrapper);
       } else {
         // User messages stay as plain text
         messageElement.textContent = message;
+        this.container.appendChild(messageElement);
       }
-      
-      this.container.appendChild(messageElement);
       
       if (this.container) {
         this.container.scrollTop = this.container.scrollHeight;
@@ -374,16 +428,22 @@
       this.screenshotPreviewImg.src = imageData;
       this.screenshotPreview.style.display = 'block';
 
-      // Store screenshot for context
-      await chrome.storage.local.set({
-        pendingScreenshotContext: {
-          imageData: imageData,
-          filename: 'screenshot.png',
-          fileType: 'image/png',
-          timestamp: Date.now()
-        },
-        lastFileUploadTimestamp: Date.now() // Update upload timestamp
-      });
+        // Update upload timestamps (track last 2 uploads for freemium limit)
+        const stored = await chrome.storage.local.get(['fileUploadTimestamps']);
+        const uploadTimestamps = stored.fileUploadTimestamps || [];
+        uploadTimestamps.push(Date.now());
+        const trimmedTimestamps = uploadTimestamps.slice(-10);
+        
+        // Store screenshot for context
+        await chrome.storage.local.set({
+          pendingScreenshotContext: {
+            imageData: imageData,
+            filename: 'screenshot.png',
+            fileType: 'image/png',
+            timestamp: Date.now()
+          },
+          fileUploadTimestamps: trimmedTimestamps
+        });
     }
     
     async checkUploadLimit() {
@@ -394,29 +454,35 @@
           return { allowed: true }; // Premium users have unlimited uploads
         }
       }
+
+      // For freemium users: check upload count in last 24 hours (limit: 2)
+      const stored = await chrome.storage.local.get(['fileUploadTimestamps']);
+      const uploadTimestamps = stored.fileUploadTimestamps || [];
+      const now = Date.now();
+      const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
       
-      // Check last upload timestamp for freemium users
-      const stored = await chrome.storage.local.get(['lastFileUploadTimestamp']);
-      const lastUpload = stored.lastFileUploadTimestamp;
+      // Filter out timestamps older than 24 hours
+      const recentUploads = uploadTimestamps.filter(timestamp => timestamp > twentyFourHoursAgo);
       
-      if (lastUpload) {
-        const hoursSinceLastUpload = (Date.now() - lastUpload) / (1000 * 60 * 60);
-        if (hoursSinceLastUpload < 24) {
-          const hoursRemaining = Math.ceil(24 - hoursSinceLastUpload);
-          return { 
-            allowed: false, 
-            message: `Free users can upload 1 file or screenshot per 24 hours. Please wait ${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''} or upgrade to Pro for unlimited uploads.` 
-          };
-        }
+      if (recentUploads.length >= 2) {
+        // Find the oldest recent upload to calculate time until next allowed upload
+        const oldestRecent = Math.min(...recentUploads);
+        const hoursUntilNext = Math.ceil((oldestRecent + (24 * 60 * 60 * 1000) - now) / (1000 * 60 * 60));
+        return { 
+          allowed: false, 
+          message: `Free users can upload 2 files or screenshots per 24 hours. Please wait ${hoursUntilNext} hour${hoursUntilNext !== 1 ? 's' : ''} or upgrade to Pro for unlimited uploads.` 
+        };
       }
       
       return { allowed: true };
     }
 
     async showUpgradeDialog(message) {
-      // Create or show upgrade dialog
+      // Check if dialog already exists in the document
       let dialog = document.getElementById('upload-limit-dialog');
+      
       if (!dialog) {
+        // Create new dialog
         dialog = document.createElement('dialog');
         dialog.id = 'upload-limit-dialog';
         dialog.className = 'modal';
@@ -427,15 +493,31 @@
               <button class="btn btn--ghost modal__close" type="button" aria-label="Close">×</button>
             </header>
             <div class="modal__body">
-              <p>${message}</p>
+              <p id="upload-limit-message">${message}</p>
             </div>
             <footer class="modal__footer">
-              <button type="button" class="btn btn--ghost" onclick="this.closest('dialog').close()">Cancel</button>
+              <button type="button" class="btn btn--ghost" id="upload-limit-cancel-btn">Cancel</button>
               <button type="button" class="btn btn--primary" id="upload-limit-upgrade-btn">Upgrade to Pro</button>
             </footer>
           </form>
         `;
         document.body.appendChild(dialog);
+        
+        // Handle cancel button
+        const cancelBtn = dialog.querySelector('#upload-limit-cancel-btn');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', () => {
+            dialog.close();
+          });
+        }
+        
+        // Handle close button
+        const closeBtn = dialog.querySelector('.modal__close');
+        if (closeBtn) {
+          closeBtn.addEventListener('click', () => {
+            dialog.close();
+          });
+        }
         
         // Handle upgrade button
         const upgradeBtn = dialog.querySelector('#upload-limit-upgrade-btn');
@@ -457,10 +539,15 @@
         });
       } else {
         // Update message if dialog exists
-        const messageEl = dialog.querySelector('.modal__body p');
+        const messageEl = dialog.querySelector('#upload-limit-message');
         if (messageEl) {
           messageEl.textContent = message;
         }
+      }
+      
+      // Ensure dialog is in document before showing
+      if (!dialog.isConnected) {
+        document.body.appendChild(dialog);
       }
       
       dialog.showModal();
@@ -468,10 +555,12 @@
 
     hideScreenshotPreview() {
       if (!this.screenshotPreview) return;
-
       this.pendingScreenshot = null;
       this.screenshotPreview.style.display = 'none';
-      chrome.storage.local.remove('pendingScreenshotContext');
+      // Also hide file preview if showing (they're mutually exclusive)
+      if (this.filePreview) {
+        this.filePreview.style.display = 'none';
+      }
     }
 
     showFilePreviewLoading(file) {
@@ -586,11 +675,13 @@
 
     hideFilePreview() {
       if (!this.filePreview) return;
-
       this.pendingFile = null;
       this.filePreview.style.display = 'none';
-      chrome.storage.local.remove('uploadedFileContext');
-      
+      // Also hide screenshot preview if showing (they're mutually exclusive)
+      if (this.screenshotPreview) {
+        this.screenshotPreview.style.display = 'none';
+        this.pendingScreenshot = null;
+      }
       // Hide file upload status
       const fileUploadStatus = document.getElementById('file-upload-status');
       if (fileUploadStatus) {
@@ -730,7 +821,6 @@
             timestamp: Date.now()
           }
         });
-        this.hideScreenshotPreview();
       }
       
       // Add user's question to chat
@@ -767,6 +857,15 @@
       
       if (this.input) {
         this.input.value = '';
+      }
+
+      // Clear previews immediately after capturing data and before sending
+      // This ensures the preview doesn't persist for the next message
+      if (screenshotToSend) {
+        this.hideScreenshotPreview();
+      }
+      if (hasUploadedFile) {
+        this.hideFilePreview();
       }
 
       // Show loading state
@@ -827,18 +926,10 @@
         // Extract image data for vision model and compress before sending
         let imageDataToSend = null;
         if (screenshotToSend) {
-          // Screenshot is already a base64 data URL - compress it
           imageDataToSend = await this.compressImage(screenshotToSend);
-          console.log('[Eureka AI] Compressed screenshot, data URL size:', imageDataToSend?.length || 0, 'bytes');
-          console.log('[Eureka AI] Screenshot data URL prefix:', imageDataToSend?.substring(0, 50) || 'none');
         } else if (fileContext && fileContext.imageData) {
-          // Uploaded file image data - compress it
           imageDataToSend = await this.compressImage(fileContext.imageData);
-          console.log('[Eureka AI] Compressed file image, data URL size:', imageDataToSend?.length || 0, 'bytes');
-          console.log('[Eureka AI] File image data URL prefix:', imageDataToSend?.substring(0, 50) || 'none');
         }
-        
-        console.log('[Eureka AI] Sending sidechat message with useVisionModel:', !!hasImageOrFile, 'hasImageData:', !!imageDataToSend, 'imageDataLength:', imageDataToSend?.length || 0);
         
         const response = await chrome.runtime.sendMessage({
           action: 'sidechat',
@@ -849,9 +940,12 @@
           imageData: imageDataToSend // Send compressed image data (full data URL format)
         });
 
-        // Clear uploaded file context after sending (so it doesn't persist)
-        if (hasUploadedFile) {
+        // Clear storage after sending (previews already cleared above)
+        if (hasUploadedFile || screenshotToSend) {
           await chrome.storage.local.remove('uploadedFileContext');
+          await chrome.storage.local.remove('pendingScreenshotContext');
+          // Ensure previews are hidden (in case they weren't already)
+          this.hideScreenshotPreview();
           this.hideFilePreview();
         }
 
@@ -863,9 +957,9 @@
           this.addMessage('Sorry, I encountered an error while processing your question.', false);
         }
 
-        // Update status cards
-        if (window.usageManager) {
-          await window.usageManager.updateStatusCards();
+        // Update status cards with fresh data after enhancement use (force refresh)
+        if (window.usageManager && window.usageManager.updateStatusCards) {
+          await window.usageManager.updateStatusCards(true);
         }
       } catch (error) {
         console.error('Error submitting question:', error);
@@ -883,6 +977,12 @@
       
       // Clear all messages from container
       this.container.innerHTML = '';
+      
+      // Clear any pending file/screenshot previews
+      this.hideScreenshotPreview();
+      this.hideFilePreview();
+      this.pendingScreenshot = null;
+      this.pendingFile = null;
       
       // Re-add suggestions container
       if (this.suggestionsContainer) {
@@ -941,9 +1041,8 @@
         
         try {
           await chrome.storage.local.set({ [key]: data });
-          console.log(`Saved chat for video ${videoId}`);
         } catch (error) {
-          console.error('Error saving chat:', error);
+          console.error('[Eureka AI] Error saving chat:', error);
         }
       }
     }

@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="styles/LoginMenu.css">
   <link rel="stylesheet" href="styles/NotesManager.css">
   <link rel="stylesheet" href="styles/FlashcardMaker.css">
+  <script src="Source/ImageUtils.js"></script>
   <script src="Source/DialogManager.js"></script>
   <script src="Source/ChatManager.js"></script>
   <script src="Source/ContentGenerator.js"></script>
@@ -41,6 +42,10 @@
         <p class="tagline">Chat Workflow Sidebar for Learners</p>
       </div>
       <div class="panel__actions">
+        <div id="header-usage-card" class="header-usage-card" style="display: none;">
+          <span id="header-uses-remaining" class="header-uses-remaining">0 uses remaining</span>
+          <button id="header-upgrade-btn" class="btn btn--primary btn--small">GET PRO</button>
+        </div>
         <button class="btn btn--ghost" id="open-settings" aria-label="Settings" type="button">
           <svg class="icon icon--gear" viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -125,6 +130,9 @@
                 </div>
               </div>
               <div class="chat-input-container">
+                <div id="upload-limit-toast" class="upload-limit-toast" style="display: none;">
+                  <span class="upload-limit-text">2 file/screenshot uploads per day (Freemium)</span>
+                </div>
                 <div class="chat-input-buttons">
                   <button id="upload-file-button" class="chat-icon-button" type="button" aria-label="Upload file">
                     📎
@@ -345,18 +353,25 @@
           </div>
         </div>
       </div>
-      
-      <!-- Get Pro Button and Uses Counter (Always visible at bottom) -->
-      <div class="pro-section">
-        <div id="uses-counter" class="uses-counter">
-          <span id="uses-remaining-text">0 uses remaining</span>
-        </div>
-        <button id="get-pro-button" class="get-pro-button" type="button">
-          Get Pro
-        </button>
-      </div>
     </div>
   </div>
+
+  <!-- Note Preview Dialog -->
+  <dialog id="note-preview-dialog" class="note-preview-dialog">
+    <div class="modal__content">
+      <header class="modal__header">
+        <h2 id="note-preview-title" class="note-preview-title"></h2>
+        <button class="btn btn--ghost modal__close" id="note-preview-close" aria-label="Close preview">
+          <svg class="icon icon--close" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.05 6.34a1 1 0 0 1 1.41 0L12 9.88l3.54-3.54a1 1 0 1 1 1.41 1.41L13.41 11.3l3.54 3.54a1 1 0 0 1-1.41 1.41L12 12.7l-3.54 3.54a1 1 0 0 1-1.41-1.41l3.54-3.54-3.54-3.54a1 1 0 0 1 0-1.41Z" />
+          </svg>
+        </button>
+      </header>
+      <div class="modal__body note-preview-body">
+        <div id="note-preview-content" class="note-preview-content"></div>
+      </div>
+    </div>
+  </dialog>
 
   <!-- Note Editor Dialog -->
   <dialog id="note-editor-dialog" class="note-editor-dialog">
@@ -641,25 +656,27 @@
       </header>
       <div class="modal__body info-dialog__body">
         <div class="info-dialog__description">
-          <p>Eureka AI is a powerful Chrome extension that helps learners and educators enhance their learning experience. Get AI-powered summaries, flashcards, quizzes, and interactive chat for any YouTube video or webpage content.</p>
+          <p>Eureka AI is a powerful Chrome extension that helps learners and educators enhance their learning experience. Get AI-powered summaries, flashcards, quizzes, interactive chat, and notes for any YouTube video, webpage, PDF, or document.</p>
         </div>
         <div class="info-dialog__steps">
-          <h3>Getting Started</h3>
+          <h3>Key Features</h3>
           <div class="info-dialog__step-section">
-            <h4>For YouTube Videos:</h4>
-            <ol>
-              <li>Open any YouTube video</li>
-              <li>Click the Eureka AI icon in your browser toolbar</li>
-              <li>Use Summarize, Flashcards, or Test features to enhance your learning</li>
-            </ol>
+            <h4>Content Analysis:</h4>
+            <ul>
+              <li>Summarize videos, webpages, PDFs, and documents</li>
+              <li>Generate flashcards and quizzes from any content</li>
+              <li>Chat with AI about content using text, screenshots, or file uploads</li>
+              <li>Save summaries, quiz results, and notes for later review</li>
+            </ul>
           </div>
           <div class="info-dialog__step-section">
-            <h4>For Webpages:</h4>
-            <ol>
-              <li>Navigate to any webpage</li>
-              <li>Click the Eureka AI icon in your browser toolbar</li>
-              <li>Chat with AI about the content or generate summaries</li>
-            </ol>
+            <h4>Chat Features:</h4>
+            <ul>
+              <li>Ask questions about any content</li>
+              <li>Upload images, PDFs, or documents for analysis</li>
+              <li>Take screenshots and ask AI to analyze them</li>
+              <li>Copy AI responses to use elsewhere</li>
+            </ul>
           </div>
         </div>
         <div class="info-dialog__cta">
@@ -681,7 +698,7 @@
         </button>
       </header>
       <div class="modal__body">
-        <p class="section-info-text">Generate AI-powered summaries of videos, webpages, or PDFs. Get concise, easy-to-understand summaries that help you learn faster. This feature costs 1 use per summary.</p>
+        <p class="section-info-text">Generate AI-powered summaries of videos, webpages, PDFs, or documents. Get concise, easy-to-understand summaries that help you learn faster. Customize summary length and complexity. Save summaries to your notes or copy them to clipboard. This feature costs 1 use per summary.</p>
         <div class="section-info-cta">
           <button id="summary-info-upgrade" class="btn btn--primary" type="button">Get Unlimited Usage</button>
         </div>
@@ -700,7 +717,7 @@
         </button>
       </header>
       <div class="modal__body">
-        <p class="section-info-text">Create interactive flashcards from any content to help you memorize key concepts. Study smarter with AI-generated flashcards tailored to your learning material. This feature costs 1 use per flashcard set.</p>
+        <p class="section-info-text">Create interactive flashcards from any content to help you memorize key concepts. Study smarter with AI-generated flashcards tailored to your learning material. Navigate through flashcards with smooth animations. This feature costs 1 use per flashcard set.</p>
         <div class="section-info-cta">
           <button id="flashcard-info-upgrade" class="btn btn--primary" type="button">Get Unlimited Usage</button>
         </div>
@@ -719,7 +736,7 @@
         </button>
       </header>
       <div class="modal__body">
-        <p class="section-info-text">Test your understanding with AI-generated quizzes. Get instant feedback on your knowledge and identify areas that need more study. This feature costs 1 use per quiz.</p>
+        <p class="section-info-text">Test your understanding with AI-generated quizzes. Get instant feedback on your knowledge and identify areas that need more study. View detailed quiz reports with all answer options, save results to notes, or copy them for review. This feature costs 1 use per quiz.</p>
         <div class="section-info-cta">
           <button id="quiz-info-upgrade" class="btn btn--primary" type="button">Get Unlimited Usage</button>
         </div>
@@ -738,7 +755,7 @@
         </button>
       </header>
       <div class="modal__body">
-        <p class="section-info-text">Organize your learning with notes. Save important information, create folders, and keep all your study materials in one place. Notes are free to use and help you stay organized.</p>
+        <p class="section-info-text">Organize your learning with notes. Save summaries, quiz results, and important information. Create folders to organize your notes, edit or delete them anytime, and copy note content to clipboard. Notes are free to use and help you stay organized.</p>
         <div class="section-info-cta">
           <button id="notes-info-upgrade" class="btn btn--primary" type="button">Get Unlimited Usage</button>
         </div>
@@ -761,7 +778,9 @@
         <div id="quiz-results-score" class="quiz-results-score"></div>
         <div id="quiz-results-message" class="quiz-results-message"></div>
         <div id="quiz-results-report" class="quiz-results-report"></div>
-        <div id="quiz-results-buttons" class="quiz-results-buttons" style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;"></div>
+        <div id="quiz-results-buttons" class="quiz-results-buttons" style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <span id="quiz-copy-feedback" class="quiz-copy-feedback" style="display: none; margin-left: 8px; font-size: 14px; color: #10b981;"></span>
+        </div>
       </div>
     </form>
   </dialog>

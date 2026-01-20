@@ -555,7 +555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize UsageManager
     if (window.UsageManager) {
       usageManager = new window.UsageManager({
-        getProButton: document.getElementById('get-pro-button')
+        getProButton: null // Removed - functionality moved to header usage card
       });
       window.usageManager = usageManager; // Make globally accessible
     }
@@ -564,30 +564,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.FileManager) {
       const uploadButton = document.getElementById('upload-file-button');
       const fileInput = document.getElementById('file-upload-input');
-      const fileUploadStatus = document.getElementById('file-upload-status');
-      const screenshotButton = document.getElementById('screenshot-button');
-      
-      console.log('[sidebar.js] FileManager elements:', {
-        uploadButton: !!uploadButton,
-        fileInput: !!fileInput,
-        fileUploadStatus: !!fileUploadStatus,
-        screenshotButton: !!screenshotButton
-      });
-      
       if (uploadButton && fileInput) {
         fileManager = new window.FileManager({
-          uploadButton: uploadButton,
-          fileInput: fileInput,
-          fileUploadStatus: fileUploadStatus,
-          screenshotButton: screenshotButton
+          uploadButton,
+          fileInput,
+          fileUploadStatus: document.getElementById('file-upload-status'),
+          screenshotButton: document.getElementById('screenshot-button')
         });
-        window.fileManager = fileManager; // Make globally accessible
-        console.log('[sidebar.js] FileManager initialized successfully');
-      } else {
-        console.error('[sidebar.js] FileManager: Missing required elements');
+        window.fileManager = fileManager;
       }
-    } else {
-      console.error('[sidebar.js] FileManager class not found');
     }
     
     // Initialize ContentDisplayManager
@@ -611,13 +596,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Quiz handling moved to QuizUIController
         chatMessages: chatMessages
       });
-      window.buttonHandlers = buttonHandlers; // Make globally accessible
-      console.log('[sidebar.js] ButtonHandlers initialized');
-    } else {
-      console.warn('[sidebar.js] ButtonHandlers or ContentDisplayManager not available', {
-        hasButtonHandlers: !!window.ButtonHandlers,
-        hasContentDisplayManager: !!contentDisplayManager
-      });
+      window.buttonHandlers = buttonHandlers;
     }
     
     // Initialize FlashcardUIController
@@ -628,13 +607,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         flashcardList: flashcardList,
         flashcardEmpty: flashcardEmpty
       });
-      window.flashcardUIController = flashcardUIController; // Make globally accessible
-      console.log('[sidebar.js] FlashcardUIController initialized:', {
-        container: !!flashcardContainer,
-        content: !!flashcardContent,
-        list: !!flashcardList,
-        empty: !!flashcardEmpty
-      });
+      window.flashcardUIController = flashcardUIController;
     }
     
     // Initialize NotesUIController
@@ -647,13 +620,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         notesList: notesList,
         noteEmpty: noteEmpty
       });
-      window.notesUIController = notesUIController; // Make globally accessible
-      console.log('[sidebar.js] NotesUIController initialized:', {
-        container: !!notesUIController.notesContainer,
-        content: !!notesUIController.notesContent,
-        list: !!notesUIController.notesList,
-        empty: !!notesUIController.noteEmpty
-      });
+      window.notesUIController = notesUIController;
     }
     
     // Initialize QuizUIController
@@ -665,14 +632,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         quizQuestionsContainer: document.getElementById('quiz-questions-container'),
         quizEmpty: document.getElementById('quiz-empty')
       });
-      window.quizUIController = quizUIController; // Make globally accessible
-      console.log('[sidebar.js] QuizUIController initialized:', {
-        container: !!quizContainer,
-        content: !!quizContent,
-        header: !!quizHeader,
-        questionsContainer: !!document.getElementById('quiz-questions-container'),
-        empty: !!document.getElementById('quiz-empty')
-      });
+      window.quizUIController = quizUIController;
     }
     
     // Initialize ClarifyHandler
@@ -681,8 +641,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         chatMessages: chatMessages,
         questionInput: questionInput
       });
-      window.clarifyHandler = clarifyHandler; // Make globally accessible
-      console.log('[sidebar.js] ClarifyHandler initialized');
+      window.clarifyHandler = clarifyHandler;
     } else {
       console.warn('[sidebar.js] ClarifyHandler module not loaded');
     }
@@ -782,9 +741,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Usage tracking functions (delegated to UsageManager)
-  async function updateStatusCards() {
+  async function updateStatusCards(forceRefresh = false) {
     if (usageManager) {
-      await usageManager.updateStatusCards();
+      await usageManager.updateStatusCards(forceRefresh);
     }
   }
   

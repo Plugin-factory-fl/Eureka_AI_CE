@@ -1532,7 +1532,7 @@ input:checked + .slider:before {
 
 .chat-message.assistant {
   margin-right: auto;
-  max-width: 80%;
+  max-width: 100%;
   text-align: left !important;
 }
 
@@ -1558,6 +1558,41 @@ input:checked + .slider:before {
   margin: 4px 0;
   text-align: left;
   line-height: 1.6;
+}
+
+.chat-message-copy-btn {
+  position: absolute;
+  top: 8px;
+  left: calc(100% + 8px);
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0.6;
+  transition: all 0.2s ease;
+  z-index: 10;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.chat-message-copy-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.15);
+  transform: scale(1.1);
+}
+
+[data-theme="dark"] .chat-message-copy-btn {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .chat-message-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .usage-limit-message {
@@ -1942,23 +1977,8 @@ input:checked + .slider:before {
 }
 
 .pro-section {
-  margin: 0;
-  padding: 12px 16px;
-  display: flex !important;
-  flex-direction: column;
-  gap: 8px;
-  position: fixed;
-  bottom: 56px; /* Above tab-navigation (56px height: 8px top padding + ~40px button + 8px bottom padding) */
-  left: 0;
-  right: 0;
-  background: var(--bg-primary);
-  z-index: 200;
-  border-top: 1px solid var(--border-color);
-  flex-shrink: 0;
-  width: 100%;
-  box-sizing: border-box;
-  visibility: visible !important;
-  opacity: 1 !important;
+  display: none !important; /* Removed - functionality moved to header */
+  visibility: hidden !important;
 }
 
 [data-theme="dark"] .pro-section {
@@ -2128,6 +2148,46 @@ input:checked + .slider:before {
 .info-dialog__cta .btn {
   width: 100%;
   padding: 12px 24px;
+}
+
+.header-usage-card {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  order: -1; /* Ensure it appears before Settings button */
+}
+
+.header-uses-remaining {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.header-usage-card .btn--small {
+  padding: 4px 12px;
+  font-size: 12px;
+  height: auto;
+  line-height: 1.4;
+  background: #10b981 !important; /* Bright green */
+  color: #ffffff !important;
+  border: none !important;
+  font-weight: 600;
+}
+
+.header-usage-card .btn--small:hover {
+  background: #059669 !important; /* Darker green on hover */
+}
+
+[data-theme="dark"] .header-usage-card {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
 }
 
 .panel__actions {
@@ -2878,6 +2938,47 @@ dialog[open] > * {
   color: #10b981;
   border-color: #10b981;
   background: rgba(16, 185, 129, 0.1);
+}
+
+.upload-limit-toast {
+  position: absolute;
+  bottom: 60px;
+  left: 12px;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10000;
+  max-width: 240px;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.upload-limit-toast:hover {
+  opacity: 0;
+  transform: translateY(5px);
+  pointer-events: none;
+}
+
+.chat-input-container {
+  position: relative;
+}
+
+.upload-limit-text {
+  font-style: italic;
+  opacity: 0.9;
+  display: block;
+}
+
+[data-theme="dark"] .upload-limit-toast {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 /* Chat Suggestions */

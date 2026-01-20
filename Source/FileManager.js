@@ -74,18 +74,33 @@
     }
 
     init() {
+      console.log('[Eureka AI] FileManager init - uploadButton:', !!this.uploadButton, 'fileInput:', !!this.fileInput);
+      
       // File upload button
       if (this.uploadButton && this.fileInput) {
         this.uploadButton.addEventListener('click', () => {
+          console.log('[Eureka AI] Upload button clicked');
           this.fileInput.click();
         });
         
         this.fileInput.addEventListener('change', (e) => {
+          console.log('[Eureka AI] File input changed, files:', e.target.files?.length || 0);
           const file = e.target.files?.[0];
           if (file) {
-            this.handleFileUpload(file);
+            console.log('[Eureka AI] File selected:', file.name, file.type, file.size, 'bytes');
+            this.handleFileUpload(file).then(() => {
+              // Reset file input so change event fires again if same file is selected
+              e.target.value = '';
+            }).catch((error) => {
+              console.error('[Eureka AI] Error in handleFileUpload:', error);
+              e.target.value = '';
+            });
+          } else {
+            console.log('[Eureka AI] No file selected');
           }
         });
+      } else {
+        console.error('[Eureka AI] FileManager: Missing required elements - uploadButton:', !!this.uploadButton, 'fileInput:', !!this.fileInput);
       }
       
       // Screenshot button
@@ -203,26 +218,53 @@
     }
 
     async handleFileUpload(file) {
-      if (!this.fileUploadStatus) return;
+      console.log('[Eureka AI] handleFileUpload called for file:', file.name);
       
-      // Check upload limit for free users
+      // Check upload limit for free users first
       const limitCheck = await this.checkUploadLimit();
       if (!limitCheck.allowed) {
+        console.log('[Eureka AI] Upload limit reached');
         await this.showUpgradeDialog(limitCheck.message);
         return;
       }
       
-      this.fileUploadStatus.style.display = 'inline-block';
-      this.fileUploadStatus.textContent = `Uploading ${file.name}...`;
-      this.fileUploadStatus.classList.remove('loaded');
+      // Show preview immediately with loading state
+      const filePreview = document.getElementById('file-preview');
+      if (filePreview && window.chatManager && window.chatManager.showFilePreviewLoading) {
+        // Show preview immediately with loading state
+        window.chatManager.showFilePreviewLoading(file);
+      } else if (filePreview && window.chatManager && window.chatManager.showFilePreview) {
+        // Fallback: show preview without loading state if method doesn't exist
+        const fileIcon = file.type === 'application/pdf' ? '📄' : 
+                        file.type?.startsWith('image/') ? '🖼️' : 
+                        file.type?.includes('document') ? '📝' : '📎';
+        window.chatManager.showFilePreview({
+          filename: file.name,
+          fileType: file.type,
+          imageData: null,
+          text: null,
+          loading: true
+        });
+      }
+      
+      console.log('[Eureka AI] Upload limit check passed, proceeding with upload');
 
       try {
+        console.log('[Eureka AI] Processing uploaded file...');
         const result = await this.processUploadedFile(file);
+        console.log('[Eureka AI] File processed, result:', {
+          hasText: !!result.text,
+          hasImageData: !!result.imageData,
+          textLength: result.text?.length || 0,
+          imageDataLength: result.imageData?.length || 0
+        });
         
         // Compress image data if present before storing
         let compressedImageData = result.imageData || '';
         if (compressedImageData && file.type?.startsWith('image/')) {
+          console.log('[Eureka AI] Compressing image...');
           compressedImageData = await this.compressImage(compressedImageData);
+          console.log('[Eureka AI] Image compressed, size:', compressedImageData.length, 'bytes');
         }
         
         // Update last upload timestamp after successful upload
@@ -231,28 +273,55 @@
         });
 
         // Store in chrome.storage.local
+        const fileContext = {
+          text: result.text || '',
+          imageData: compressedImageData,
+          filename: file.name,
+          fileType: file.type,
+          timestamp: Date.now()
+        };
+        console.log('[Eureka AI] Storing file context:', {
+          filename: fileContext.filename,
+          fileType: fileContext.fileType,
+          hasText: !!fileContext.text,
+          hasImageData: !!fileContext.imageData
+        });
+        
         await chrome.storage.local.set({
-          uploadedFileContext: {
-            text: result.text || '',
-            imageData: compressedImageData,
-            filename: file.name,
-            fileType: file.type,
-            timestamp: Date.now()
-          }
+          uploadedFileContext: fileContext
         });
 
-        // Update status
+        // Update status (optional)
         if (this.fileUploadStatus) {
           this.fileUploadStatus.textContent = `File loaded: ${file.name}`;
           this.fileUploadStatus.classList.add('loaded');
         }
 
+        // Update file preview to remove loading state (similar to screenshot preview)
+        console.log('[Eureka AI] Attempting to update file preview, chatManager:', !!window.chatManager, 'showFilePreview:', !!(window.chatManager && window.chatManager.showFilePreview));
+        if (window.chatManager && window.chatManager.showFilePreview) {
+          // This will update the preview and remove loading state
+          window.chatManager.showFilePreview(fileContext);
+          console.log('[Eureka AI] File preview updated, loading state removed');
+        } else {
+          console.warn('[Eureka AI] chatManager or showFilePreview not available');
+        }
+
         console.log('[Eureka AI] File uploaded and processed successfully');
       } catch (error) {
         console.error('[Eureka AI] Error uploading file:', error);
+        console.error('[Eureka AI] Error stack:', error.stack);
+        
+        // Hide file preview on error
+        if (window.chatManager && window.chatManager.hideFilePreview) {
+          window.chatManager.hideFilePreview();
+        }
+        
         alert(`Failed to upload file: ${error.message}`);
         if (this.fileUploadStatus) {
           this.fileUploadStatus.style.display = 'none';
+          this.fileUploadStatus.textContent = '';
+          this.fileUploadStatus.classList.remove('loaded');
         }
       }
     }

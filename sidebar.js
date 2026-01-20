@@ -562,13 +562,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Initialize FileManager
     if (window.FileManager) {
-      fileManager = new window.FileManager({
-        uploadButton: document.getElementById('upload-file-button'),
-        fileInput: document.getElementById('file-upload-input'),
-        fileUploadStatus: document.getElementById('file-upload-status'),
-        screenshotButton: document.getElementById('screenshot-button')
+      const uploadButton = document.getElementById('upload-file-button');
+      const fileInput = document.getElementById('file-upload-input');
+      const fileUploadStatus = document.getElementById('file-upload-status');
+      const screenshotButton = document.getElementById('screenshot-button');
+      
+      console.log('[sidebar.js] FileManager elements:', {
+        uploadButton: !!uploadButton,
+        fileInput: !!fileInput,
+        fileUploadStatus: !!fileUploadStatus,
+        screenshotButton: !!screenshotButton
       });
-      window.fileManager = fileManager; // Make globally accessible
+      
+      if (uploadButton && fileInput) {
+        fileManager = new window.FileManager({
+          uploadButton: uploadButton,
+          fileInput: fileInput,
+          fileUploadStatus: fileUploadStatus,
+          screenshotButton: screenshotButton
+        });
+        window.fileManager = fileManager; // Make globally accessible
+        console.log('[sidebar.js] FileManager initialized successfully');
+      } else {
+        console.error('[sidebar.js] FileManager: Missing required elements');
+      }
+    } else {
+      console.error('[sidebar.js] FileManager class not found');
     }
     
     // Initialize ContentDisplayManager

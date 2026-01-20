@@ -27,7 +27,17 @@
       this.screenshotPreview = document.getElementById('screenshot-preview');
       this.screenshotPreviewImg = document.getElementById('screenshot-preview-img');
       this.screenshotPreviewRemove = document.getElementById('screenshot-preview-remove');
-      
+
+      // Get file preview elements
+      this.filePreview = document.getElementById('file-preview');
+      this.filePreviewImg = document.getElementById('file-preview-img');
+      this.filePreviewInfo = document.getElementById('file-preview-info');
+      this.filePreviewIcon = document.getElementById('file-preview-icon');
+      this.filePreviewName = document.getElementById('file-preview-name');
+      this.filePreviewRemove = document.getElementById('file-preview-remove');
+      this.filePreviewLoading = document.getElementById('file-preview-loading');
+      this.pendingFile = null;
+
       this.init();
     }
 
@@ -124,6 +134,23 @@
           this.hideScreenshotPreview();
         });
       }
+
+      // File preview remove button
+      if (this.filePreviewRemove) {
+        this.filePreviewRemove.addEventListener('click', () => {
+          this.hideFilePreview();
+        });
+      }
+
+      // Listen for uploaded files
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === 'local' && changes.uploadedFileContext) {
+          const fileContext = changes.uploadedFileContext.newValue;
+          if (fileContext) {
+            this.showFilePreview(fileContext);
+          }
+        }
+      });
       
       // Clear chat button
       const clearChatButton = document.getElementById('clear-chat-button');
@@ -329,18 +356,24 @@
 
     async showScreenshotPreview(imageData) {
       if (!this.screenshotPreview || !this.screenshotPreviewImg) return;
-      
+
       // Check upload limit for free users
       const limitCheck = await this.checkUploadLimit();
       if (!limitCheck.allowed) {
         await this.showUpgradeDialog(limitCheck.message);
         return;
       }
-      
+
+      // Hide file preview if showing
+      if (this.filePreview) {
+        this.filePreview.style.display = 'none';
+      }
+      this.pendingFile = null;
+
       this.pendingScreenshot = imageData;
       this.screenshotPreviewImg.src = imageData;
       this.screenshotPreview.style.display = 'block';
-      
+
       // Store screenshot for context
       await chrome.storage.local.set({
         pendingScreenshotContext: {
@@ -435,10 +468,136 @@
 
     hideScreenshotPreview() {
       if (!this.screenshotPreview) return;
-      
+
       this.pendingScreenshot = null;
       this.screenshotPreview.style.display = 'none';
       chrome.storage.local.remove('pendingScreenshotContext');
+    }
+
+    showFilePreviewLoading(file) {
+      if (!this.filePreview) return;
+
+      // Hide screenshot preview if showing
+      if (this.screenshotPreview) {
+        this.screenshotPreview.style.display = 'none';
+      }
+
+      // Show file preview with loading state
+      this.filePreview.style.display = 'block';
+      this.filePreview.classList.add('loading');
+
+      // Show loading overlay
+      const loadingOverlay = document.getElementById('file-preview-loading');
+      if (loadingOverlay) {
+        loadingOverlay.style.display = 'flex';
+      }
+
+      // Set up preview based on file type
+      const fileName = file.name || 'Uploaded file';
+      const fileType = file.type || '';
+
+      // If it's an image, try to show a preview
+      if (fileType.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (this.filePreviewImg) {
+            this.filePreviewImg.src = e.target.result;
+            this.filePreviewImg.style.display = 'block';
+          }
+          if (this.filePreviewInfo) {
+            this.filePreviewInfo.style.display = 'none';
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        // For PDFs and documents, show file icon and name
+        if (this.filePreviewImg) {
+          this.filePreviewImg.style.display = 'none';
+        }
+        if (this.filePreviewInfo) {
+          const fileIcon = fileType === 'application/pdf' ? '📄' : 
+                          fileType?.includes('document') ? '📝' : '📎';
+          if (this.filePreviewIcon) {
+            this.filePreviewIcon.textContent = fileIcon;
+          }
+          if (this.filePreviewName) {
+            this.filePreviewName.textContent = fileName;
+          }
+          this.filePreviewInfo.style.display = 'flex';
+        }
+      }
+
+      // Store pending file info
+      this.pendingFile = {
+        filename: fileName,
+        fileType: fileType,
+        loading: true
+      };
+    }
+
+    showFilePreview(fileContext) {
+      if (!this.filePreview) return;
+
+      this.pendingFile = fileContext;
+      
+      // Hide screenshot preview if showing
+      if (this.screenshotPreview) {
+        this.screenshotPreview.style.display = 'none';
+      }
+
+      // Show file preview
+      this.filePreview.style.display = 'block';
+      
+      // Remove loading state
+      this.filePreview.classList.remove('loading');
+      const loadingOverlay = document.getElementById('file-preview-loading');
+      if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+      }
+
+      // If it's an image, show the image preview
+      if (fileContext.imageData && fileContext.fileType?.startsWith('image/')) {
+        if (this.filePreviewImg) {
+          this.filePreviewImg.src = fileContext.imageData;
+          this.filePreviewImg.style.display = 'block';
+        }
+        if (this.filePreviewInfo) {
+          this.filePreviewInfo.style.display = 'none';
+        }
+      } else {
+        // For PDFs and documents, show file icon and name
+        if (this.filePreviewImg) {
+          this.filePreviewImg.style.display = 'none';
+        }
+        if (this.filePreviewInfo) {
+          const fileName = fileContext.filename || 'Uploaded file';
+          const fileIcon = fileContext.fileType === 'application/pdf' ? '📄' : 
+                          fileContext.fileType?.includes('document') ? '📝' : '📎';
+          if (this.filePreviewIcon) {
+            this.filePreviewIcon.textContent = fileIcon;
+          }
+          if (this.filePreviewName) {
+            this.filePreviewName.textContent = fileName;
+          }
+          this.filePreviewInfo.style.display = 'flex';
+        }
+      }
+    }
+
+    hideFilePreview() {
+      if (!this.filePreview) return;
+
+      this.pendingFile = null;
+      this.filePreview.style.display = 'none';
+      chrome.storage.local.remove('uploadedFileContext');
+      
+      // Hide file upload status
+      const fileUploadStatus = document.getElementById('file-upload-status');
+      if (fileUploadStatus) {
+        fileUploadStatus.style.display = 'none';
+        fileUploadStatus.textContent = '';
+        fileUploadStatus.classList.remove('loaded');
+      }
     }
 
     startPlaceholderRotation() {
@@ -461,8 +620,8 @@
     async handleSubmit() {
       const question = this.input?.value.trim();
       
-      // If there's a pending screenshot, include it even if question is empty
-      if (!question && !this.pendingScreenshot) return;
+      // If there's a pending screenshot or file, include it even if question is empty
+      if (!question && !this.pendingScreenshot && !this.pendingFile) return;
 
       // Check usage limit
       const BACKEND_URL = 'https://sumvid-learn-backend.onrender.com';
@@ -693,13 +852,7 @@
         // Clear uploaded file context after sending (so it doesn't persist)
         if (hasUploadedFile) {
           await chrome.storage.local.remove('uploadedFileContext');
-          // Hide file upload status
-          const fileUploadStatus = document.getElementById('file-upload-status');
-          if (fileUploadStatus) {
-            fileUploadStatus.style.display = 'none';
-            fileUploadStatus.textContent = '';
-            fileUploadStatus.classList.remove('loaded');
-          }
+          this.hideFilePreview();
         }
 
         if (response?.error) {
